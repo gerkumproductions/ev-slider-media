@@ -1,0 +1,9 @@
+requests>=2.31
+beautifulsoup4>=4.12
+Pillow>=10.0
+PyYAML>=6.0
+playwright>=1.44   # Bildergalerie (danach: playwright install chromium)
+boto3>=1.34        # nur für hosting.mode=s3
+fastapi>=0.110       # nur für webapp.py
+uvicorn[standard]>=0.27
+python-multipart>=0.0.9

@@ -1,0 +1,81 @@
+LINK SCHICKEN, FERTIG – Einrichtung ohne eigenen Rechner
+========================================================
+
+Danach laeuft alles auf GitHub. Dein Mac bleibt aus, du schickst dem Bot per
+Telegram einen Link und bekommst wenige Minuten spaeter die fertigen Slides
+zurueck – der Post ist dann schon in Metricool eingeplant.
+
+Einmalig, ca. 20 Minuten.
+
+
+SCHRITT 1 – Telegram-Bot anlegen
+--------------------------------
+1. Telegram installieren (Handy oder Mac) und oeffnen.
+2. Oben in der Suche eingeben:  @BotFather   und den Chat oeffnen.
+   (Achte auf das blaue Haekchen.)
+3. Schreiben:  /newbot
+4. Einen Namen vergeben, z.B.  EV Slider Bochum
+5. Einen Benutzernamen vergeben, der auf "bot" endet, z.B.  ev_slider_bochum_bot
+6. BotFather antwortet mit einem Token in der Form
+   8123456789:AAH...   -> merken, brauchen wir gleich.
+
+
+SCHRITT 2 – Deine Chat-ID herausfinden
+--------------------------------------
+1. In Telegram nach deinem neuen Bot suchen und den Chat oeffnen.
+2. Irgendetwas schreiben, z.B.  hallo
+3. Im Browser diese Adresse aufrufen, DEINTOKEN ersetzen:
+   https://api.telegram.org/botDEINTOKEN/getUpdates
+4. In dem Text steht  "chat":{"id":123456789  -> diese Zahl ist deine Chat-ID.
+
+
+SCHRITT 3 – Dateien ins Repo laden
+----------------------------------
+1. github.com oeffnen, das Repo ev-slider-media aufrufen.
+2. "Add file" -> "Upload files".
+3. Aus dem entpackten Ordner ALLES hineinziehen ausser:
+   .env, out, demo-slides, .venv
+   Wichtig: der Ordner .github muss mit hinein.
+   (Falls der Finder .github nicht anzeigt: cmd+Shift+Punkt blendet
+   versteckte Ordner ein.)
+4. Unten auf "Commit changes" klicken.
+
+
+SCHRITT 4 – Zugangsdaten hinterlegen
+------------------------------------
+Im Repo: Settings -> Secrets and variables -> Actions -> "New repository secret".
+Fuenf Stueck anlegen, Name exakt so schreiben:
+
+   TELEGRAM_BOT_TOKEN          der Token aus Schritt 1
+   TELEGRAM_ALLOWED_CHAT_IDS   deine Chat-ID aus Schritt 2
+   ANTHROPIC_API_KEY           von console.anthropic.com
+   METRICOOL_USER_TOKEN        aus deinem Metricool-Konto
+   METRICOOL_USER_ID           aus deinem Metricool-Konto
+   METRICOOL_BLOG_ID           steht in der Metricool-Adresszeile nach blogId=
+
+Die Werte sind danach nicht mehr lesbar, auch nicht fuer dich – das ist so
+gewollt. Aendern geht jederzeit.
+
+
+SCHRITT 5 – Erster Lauf
+-----------------------
+1. Im Repo auf den Reiter "Actions", links "EV Slider" anklicken.
+2. Rechts "Run workflow" -> gruenen Knopf druecken.
+3. Vorher dem Bot in Telegram einen Expose-Link schicken.
+4. Nach 2-3 Minuten sollte die Antwort im Telegram-Chat stehen.
+
+Ab dann laeuft es von allein: der Ablauf prueft alle 5 Minuten, ob eine neue
+Nachricht da ist.
+
+
+AB JETZT IM ALLTAG
+------------------
+Link an den Bot schicken. Fertig. Kein Klick mehr.
+Mehrere Links in einer Nachricht oder nacheinander sind kein Problem –
+die Posts werden automatisch auf Mo-Sa verteilt.
+
+
+WENN ETWAS KLEMMT
+-----------------
+Repo -> Actions -> letzten Lauf anklicken -> die Ausgabe kopieren und an
+Claude schicken. Der Bot meldet Fehler aber auch direkt im Chat.

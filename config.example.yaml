@@ -1,0 +1,49 @@
+brand:
+  red: "#C8102E"          # E&V Rot – im Brand Manual gegenprüfen
+  shop_name: "Engel & Völkers Bochum"
+  handle: "@engelvoelkers.bochum"
+
+fonts:
+  headline: ["assets/fonts/EV-Headline.otf"]
+  body:     ["assets/fonts/EV-Regular.otf"]
+  bold:     ["assets/fonts/EV-Bold.otf"]
+
+slides:
+  width: 1080
+  height: 1350            # 4:5
+  max_total: 10
+  facts: ["Wohnfläche", "Badezimmer", "Baujahr", "Zimmer"]
+
+caption:
+  model: "claude-sonnet-5"
+  max_chars: 1400
+  cta_template: 'Kommentiere "{keyword}" und du bekommst das komplette Exposé per DM.'
+
+slides_facts_hint: |
+  Reihenfolge der Fakten auf Slide 2 (max. 4). Icons optional als
+  assets/icons/<key>.png, z.B. wohnflaeche.png, badezimmer.png
+
+schedule:
+  days: ["monday","tuesday","wednesday","thursday","friday","saturday"]
+  times: ["09:30", "11:30"]   # morgens - abends laufen die Reels
+  timezone: "Europe/Berlin"
+  min_lead_hours: 12          # kein Post innerhalb der nächsten 12 h
+
+metricool:
+  auto_publish: true
+  networks: ["instagram"]
+  normalize_media: true   # Bilder vor dem Einplanen auf Metricools Server kopieren
+
+hosting:
+  # github = kostenlos, keine Kreditkarte, kein Server noetig
+  mode: "github"
+  github_owner: "dein-github-name"
+  github_repo: "ev-slider-media"     # oeffentliches Repo
+  github_branch: "main"
+  prefix: ""
+  # nur fuer mode: s3
+  bucket: ""
+  endpoint_url: ""
+  public_base_url: ""
+
+output_dir: "out"

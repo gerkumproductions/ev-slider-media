@@ -1,0 +1,31 @@
+EV SLIDER – Kurzanleitung
+=========================
+
+EINMALIG EINRICHTEN
+-------------------
+1. Diesen Ordner in deinen Dokumente-Ordner verschieben.
+2. Doppelklick auf   setup.command
+   Falls macOS meckert ("nicht geoeffnet werden, da unbekannter Entwickler"):
+   Rechtsklick auf die Datei -> "Oeffnen" -> im Dialog nochmal "Oeffnen".
+3. Den Anweisungen im schwarzen Fenster folgen und die Zugangsdaten einfuegen.
+   Beim Einfuegen bleibt das Feld leer - das ist Absicht, es wird trotzdem
+   uebernommen. Danach Enter.
+
+TAEGLICHE NUTZUNG
+-----------------
+Doppelklick auf   slider.command
+- Expose-Links einfuegen, einen pro Zeile
+- leere Zeile (nur Enter), wenn alle drin sind
+- auswaehlen, was passieren soll
+- fertig
+
+Die Slides landen im Ordner "out".
+Das Protokoll steht in "letzter-lauf.txt" - bei Problemen diese Datei schicken.
+
+WO FINDE ICH WAS
+----------------
+config.yaml        Einstellungen: Uhrzeiten, Wochentage, CTA-Text, Fakten
+.env               deine Zugangsdaten (nicht weitergeben)
+assets/fonts/      die Engel & Voelkers Schriften
+assets/icons/      hier optional die Original-Icons ablegen
+out/               die fertigen Slides
