@@ -37,7 +37,7 @@ metricool:
 hosting:
   # github = kostenlos, keine Kreditkarte, kein Server noetig
   mode: "github"
-  github_owner: "dein-github-name"
+  github_owner: "gerkumproductions"
   github_repo: "ev-slider-media"     # oeffentliches Repo
   github_branch: "main"
   prefix: ""
