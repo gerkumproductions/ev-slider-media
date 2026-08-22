@@ -44,7 +44,7 @@ fonts:
 slides:
   width: 1080
   height: 1350            # 4:5
-  max_total: 7            # Titel + Fakten + bis zu 5 Fotoseiten
+  max_total: 10           # Instagram-Maximum: Titel + Fakten + bis zu 8 Fotoseiten
   facts: ["Wohnfläche", "Badezimmer", "Baujahr", "Zimmer"]
 
 caption:
