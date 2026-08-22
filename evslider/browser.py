@@ -266,18 +266,27 @@ def fetch_gallery(url: str, headless: bool = True, max_clicks: int = 40,
             # tauchen nur Bilder auf, die wirklich zur Galerie gehoeren.
             galerie: list[tuple[str, str, str]] = []
             gesehen: set[str] = set()
-            schritte = (total or 12) + 2
+            # Grosszuegig blaettern: lieber ein paar Klicks zu viel als ein
+            # halber Slider. Abbruch erst, wenn mehrfach nichts Neues kommt.
+            schritte = max((total or 0) * 2, 24)
+            leerlauf = 0
             for _ in range(schritte):
                 uuid, alt, caption = _current_slide(page)
                 total = total or expected_total(page.inner_text("body"))
                 if uuid and uuid not in gesehen:
                     gesehen.add(uuid)
                     galerie.append((uuid, alt, caption))
+                    leerlauf = 0
                 elif uuid:
                     for i, (u, a, c) in enumerate(galerie):
                         if u == uuid:
                             galerie[i] = (u, a or alt, c or caption)
+                    leerlauf += 1
+                else:
+                    leerlauf += 1
                 if total and len(galerie) >= total:
+                    break
+                if leerlauf >= 6:      # sechsmal dasselbe Bild -> Ende
                     break
                 weiter = False
                 for sel in NEXT_SELECTORS:
@@ -291,7 +300,17 @@ def fetch_gallery(url: str, headless: bool = True, max_clicks: int = 40,
                         continue
                 if not weiter:
                     page.keyboard.press("ArrowRight")
-                page.wait_for_timeout(650)
+                page.wait_for_timeout(900)     # Bildwechsel abwarten
+
+            # Fehlt etwas gegenueber dem Zaehler, aus dem DOM nachfuellen
+            if total and len(galerie) < total:
+                collect()
+                for uuid in order:
+                    if uuid not in gesehen and len(galerie) < total:
+                        gesehen.add(uuid)
+                        a, c = seen.get(uuid, ("", ""))
+                        galerie.append((uuid, a, c))
+                print(f"[i] Aus der Seitenstruktur ergänzt auf {len(galerie)} Bilder.")
 
             if galerie and (not total or len(galerie) >= min(total, 3)):
                 mit = sum(1 for _, _, c in galerie if c)
