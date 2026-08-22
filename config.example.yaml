@@ -69,8 +69,11 @@ schedule:
   # naechsten erlaubten Tag zur selben Uhrzeit.
   slot_check: true            # false = Pruefung aus, alter Stand
   slot_toleranz_min: 60       # ein vorhandener Post ±60 Min gilt als Kollision
-  tag_komplett: true          # true = nur ein Objektpost pro Tag, egal wann
-                              # false = nur die Uhrzeit selbst zaehlt
+  tag_komplett: false         # true = nur EIN Post pro Tag, egal zu welcher
+                              # Uhrzeit. Blockiert dann auch Tage, an denen
+                              # nur ein Reel liegt - deshalb hier false.
+  max_vorlauf_tage: 21        # rutscht der Termin weiter weg, warnt das
+                              # Protokoll deutlich
 
 metricool:
   auto_publish: true
