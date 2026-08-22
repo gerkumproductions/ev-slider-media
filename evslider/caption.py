@@ -34,10 +34,12 @@ Erzeuge:
    eine Visualisierung oder ein Homestaging-Rendering, beginne den Titel mit
    "Visualisierung".
 2. "ausschliessen": eine Liste der Positionen (0-basiert) aus bild_alt_texte, die
-   KEIN Foto der Immobilie zeigen - also Werbebilder, Portraits, Personen im
-   Beratungsgespraech, Logos, Grafiken oder Stimmungsbilder ohne Objektbezug.
-   Menschen in einem Raum der Immobilie sind KEIN Ausschlussgrund; entscheidend
-   ist, ob das Bild die Immobilie zeigt. Im Zweifel nicht ausschliessen.
+   KEIN reines Objektfoto sind. Ausschliessen: alles, worauf Menschen zu sehen
+   sind (Paare, Familien, Makler, Interessenten, Beratungsszenen), ausserdem
+   Logos, Grafiken, Karten und Stimmungsbilder ohne Objektbezug.
+   Ein Objektfoto zeigt Raeume, Gebaeude, Garten oder Aussicht - ohne Personen.
+   Im Zweifel AUSSCHLIESSEN: ein Bild zu wenig ist besser als ein Werbebild
+   im Slider.
 3. "keyword": EIN einzelnes, gut merkbares Stichwort in Grossbuchstaben, das zum Objekt
    passt (z.B. "LOGGIA", "WIEMELHAUSEN", "AUFZUG"). Keine Umlaute, keine Leerzeichen.
    Steht im Datensatz "vorgegebenes_cta_stichwort", nutze genau dieses.
@@ -145,13 +147,18 @@ def generate(ex, cfg, keyword: str | None = None) -> dict:
 
 
 # Bilder, die nie in den Slider gehoeren
-# Bewusst eng gehalten: nur eindeutige Werbe- und Servicebilder. Menschen
-# in einem Raum der Immobilie (Homestaging) sollen NICHT aussortiert werden -
-# solche Grenzfaelle entscheidet die KI-Einschaetzung.
+# E&V blendet in die Galerien Stock- und Werbebilder ein, auf denen Menschen
+# das Motiv sind (Paare, Makler, Beratungsszenen). Die gehoeren nie in den
+# Slider. Objektfotos zeigen Raeume - dort kommen diese Woerter nicht vor.
 WERBUNG = (
-    "finanzberatung", "beratungsgespräch", "consultation", "advisor",
-    "consultant", "real estate agent", "handshake", "shaking hands",
-    "business meeting", "shop image", "wavy pattern", "engel & völkers logo",
+    # Personen als Motiv
+    "homebuyer", "home buyer", "house hunter", "realtor", "real estate agent",
+    "estate agent", "broker", "advisor", "consultant", "couple", "family",
+    "people", "person", "man and woman", "woman and man", "smiling",
+    "handshake", "shaking hands", "talking to", "viewing a", "looking at a",
+    # Beratung und Werbung
+    "finanzberatung", "beratungsgespräch", "consultation", "meeting",
+    "shop image", "wavy pattern", "engel & völkers logo", "logo",
 )
 
 
