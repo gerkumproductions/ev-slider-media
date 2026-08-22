@@ -143,6 +143,36 @@ _JS_CURRENT = r"""
 """
 
 
+# Wenn keine Unterschrift gefunden wird: zeigen, was rund um den Zaehler steht.
+# Damit laesst sich der Seitenaufbau nachtraeglich anpassen.
+_JS_DIAGNOSE = r"""
+() => {
+  const istZaehler = t => /^\d+\s*\/\s*\d+$/.test((t || '').trim());
+  const blaetter = [...document.querySelectorAll('span,div,p,figcaption')]
+    .filter(n => n.children.length === 0);
+  const z = blaetter.find(n => istZaehler(n.innerText));
+  if (!z) return 'kein Zaehler gefunden. Sichtbare kurze Texte: ' +
+    blaetter.map(n => (n.innerText || '').trim())
+            .filter(t => t && t.length < 40).slice(-12).join(' | ');
+  let p = z.parentElement, pfad = [];
+  for (let i = 0; i < 3 && p; i++, p = p.parentElement) {
+    pfad.push(p.tagName + '.' + (p.className || '').toString().slice(0, 30) +
+      ' -> [' + [...p.querySelectorAll('span,div,p,figcaption')]
+        .filter(n => n.children.length === 0)
+        .map(n => (n.innerText || '').trim()).filter(Boolean).join(' | ') + ']');
+  }
+  return pfad.join('  ##  ');
+}
+"""
+
+
+def _diagnose(page) -> str:
+    try:
+        return str(page.evaluate(_JS_DIAGNOSE))
+    except Exception as exc:                                   # noqa: BLE001
+        return f"Diagnose fehlgeschlagen: {exc}"
+
+
 def _current_slide(page) -> tuple[str, str]:
     """(uuid, Unterschrift) des gerade sichtbaren Bildes."""
     try:
@@ -202,15 +232,24 @@ def fetch_gallery(url: str, headless: bool = True, max_clicks: int = 40,
             # Vollbild-Bilderansicht öffnen: erst über den Reiter "Bilder",
             # sonst durch Klick aufs erste Bild.
             geoeffnet = False
-            for sel in GALLERY_TAB_SELECTORS:
-                try:
-                    el = page.locator(sel).first
-                    if el.is_visible(timeout=800):
-                        el.click(timeout=2000)
-                        geoeffnet = True
-                        break
-                except Exception:
-                    continue
+            try:
+                el = page.get_by_text(re.compile(r"^\s*Bilder\s*\(\d+\)\s*$")).first
+                if el.is_visible(timeout=1500):
+                    el.click(timeout=2500)
+                    geoeffnet = True
+            except Exception:
+                pass
+            if not geoeffnet:
+                for sel in GALLERY_TAB_SELECTORS:
+                    try:
+                        el = page.locator(sel).first
+                        if el.is_visible(timeout=800):
+                            el.click(timeout=2000)
+                            geoeffnet = True
+                            break
+                    except Exception:
+                        continue
+            print(f"[i] Bilder-Reiter geöffnet: {geoeffnet}")
             if not geoeffnet:
                 try:
                     page.locator("img[src*='uploadcare']").first.click(timeout=2500)
@@ -252,6 +291,12 @@ def fetch_gallery(url: str, headless: bool = True, max_clicks: int = 40,
                 stale = stale + 1 if len(order) == before else 0
                 if stale >= 4:
                     break
+
+            mit_caption = sum(1 for u in order if seen.get(u, ("", ""))[1])
+            print(f"[i] {len(order)} Bilder, davon {mit_caption} mit Unterschrift "
+                  f"von der Website.")
+            if not mit_caption:
+                print("[i] Diagnose (Umfeld des Zählers):", _diagnose(page)[:400])
 
             html = page.content()
             return {"html": html,
