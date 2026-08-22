@@ -27,6 +27,15 @@ COOKIE_SELECTORS = [
     "button:has-text('Zustimmen')",
 ]
 
+# Reiter, der die Vollbild-Bilderansicht öffnet - dort steht unter jedem Bild
+# die deutsche Unterschrift ("offene Küche") neben dem Zähler ("3/5").
+GALLERY_TAB_SELECTORS = [
+    "button:has-text('Bilder')",
+    "a:has-text('Bilder')",
+    "[role='tab']:has-text('Bilder')",
+    "div:has-text('Bilder ('):not(:has(div))",
+]
+
 NEXT_SELECTORS = [
     "button[aria-label*='ächste' i]",       # Nächste / naechste
     "button[aria-label*='next' i]",
@@ -96,6 +105,54 @@ def _harvest(page) -> list[tuple[str, str, str]]:
     return out
 
 
+# Liest, was gerade im Vollbild zu sehen ist: grösstes Bild + Unterschrift.
+# Die Unterschrift steht im selben Bereich wie der Zähler - darüber finden
+# wir sie zuverlässiger als über die Position im Seitenaufbau.
+_JS_CURRENT = r"""
+() => {
+  const kurz = t => t && t.trim().length > 0 && t.trim().length < 70;
+  const istZaehler = t => /^\d+\s*\/\s*\d+$/.test((t || '').trim());
+  const blaetter = [...document.querySelectorAll('span,div,p,figcaption')]
+    .filter(n => n.children.length === 0);
+
+  const zaehler = blaetter.find(n => istZaehler(n.innerText));
+  let caption = '';
+  if (zaehler) {
+    let p = zaehler.parentElement;
+    for (let i = 0; i < 3 && p && !caption; i++, p = p.parentElement) {
+      const t = [...p.querySelectorAll('span,div,p,figcaption')]
+        .filter(n => n.children.length === 0)
+        .map(n => (n.innerText || '').trim())
+        .filter(t => kurz(t) && !istZaehler(t));
+      if (t.length) caption = t[0];
+    }
+  }
+
+  let best = null, area = 0;
+  for (const img of document.querySelectorAll('img')) {
+    const r = img.getBoundingClientRect();
+    const a = Math.max(0, r.width) * Math.max(0, r.height);
+    if (r.bottom > 0 && r.top < window.innerHeight && a > area) { area = a; best = img; }
+  }
+  return {
+    src: best ? (best.currentSrc || best.src || '') : '',
+    caption: caption,
+    zaehler: zaehler ? zaehler.innerText.trim() : ''
+  };
+}
+"""
+
+
+def _current_slide(page) -> tuple[str, str]:
+    """(uuid, Unterschrift) des gerade sichtbaren Bildes."""
+    try:
+        d = page.evaluate(_JS_CURRENT)
+    except Exception:                                          # noqa: BLE001
+        return "", ""
+    m = UPLOADCARE_RE.search(d.get("src") or "")
+    return (m.group(1) if m else ""), (d.get("caption") or "").strip()
+
+
 def fetch_gallery(url: str, headless: bool = True, max_clicks: int = 40,
                   timeout: int = 45000) -> dict:
     """Öffnet die Seite, blättert durch die Galerie und sammelt alle Bilder.
@@ -141,13 +198,36 @@ def fetch_gallery(url: str, headless: bool = True, max_clicks: int = 40,
                     seen[uuid] = (alt or alt_alt, caption or alt_cap)
 
             collect()
-            # Galerie öffnen (Vollbild zeigt oft alle Bilder auf einmal)
-            try:
-                page.locator("img[src*='uploadcare']").first.click(timeout=2500)
-                page.wait_for_timeout(1500)
-                collect()
-            except Exception:
-                pass
+
+            # Vollbild-Bilderansicht öffnen: erst über den Reiter "Bilder",
+            # sonst durch Klick aufs erste Bild.
+            geoeffnet = False
+            for sel in GALLERY_TAB_SELECTORS:
+                try:
+                    el = page.locator(sel).first
+                    if el.is_visible(timeout=800):
+                        el.click(timeout=2000)
+                        geoeffnet = True
+                        break
+                except Exception:
+                    continue
+            if not geoeffnet:
+                try:
+                    page.locator("img[src*='uploadcare']").first.click(timeout=2500)
+                except Exception:
+                    pass
+            page.wait_for_timeout(1800)
+            collect()
+
+            def unterschrift_merken():
+                uuid, caption = _current_slide(page)
+                if uuid and caption:
+                    alt_alt, alt_cap = seen.get(uuid, ("", ""))
+                    if uuid not in seen:
+                        order.append(uuid)
+                    seen[uuid] = (alt_alt, caption)      # Website schlägt alt-Text
+
+            unterschrift_merken()
 
             stale = 0
             for _ in range(max_clicks):
@@ -168,6 +248,7 @@ def fetch_gallery(url: str, headless: bool = True, max_clicks: int = 40,
                     page.keyboard.press("ArrowRight")
                 page.wait_for_timeout(700)
                 collect()
+                unterschrift_merken()
                 stale = stale + 1 if len(order) == before else 0
                 if stale >= 4:
                     break
