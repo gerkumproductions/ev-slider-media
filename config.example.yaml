@@ -19,6 +19,13 @@ shops:
     # Abweichungen moeglich, z.B. andere Uhrzeiten:
     # schedule:
     #   times: ["10:00"]
+  ruhrgebiet:
+    aliases: ["rg", "ruhr"]
+    brand:
+      shop_name: "Engel & Völkers Ruhrgebiet"
+      handle: "@engelvoelkers.ruhrgebiet"
+    metricool:
+      blog_id: "5771722"           # blogId des Ruhrgebiet-Accounts
 
 # Gilt nur noch, wenn genau EIN Shop konfiguriert ist. Bei mehreren Shops
 # ist das Kuerzel in der Nachricht Pflicht (siehe shop_pflicht).
