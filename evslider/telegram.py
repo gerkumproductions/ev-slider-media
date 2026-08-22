@@ -193,6 +193,16 @@ def process(chat_id: int, jobs: list[tuple[str, str]], cfg) -> None:
                  f"{len(paths)} Slides · eingeplant für "
                  f"{slots[i]:%a %d.%m. %H:%M} Uhr{fehlt}\n\n{text}")
             send_slides(chat_id, paths)
+
+            # Hat die Galerie geklemmt, den Screenshot mitschicken - daran
+            # laesst sich der Seitenaufbau erkennen.
+            if getattr(ex, "diagnose_bild", ""):
+                from pathlib import Path as _P
+                d = _P(ex.diagnose_bild)
+                if d.exists():
+                    send(chat_id, "Die Galerie war unvollständig. Screenshot "
+                                  "zur Fehlersuche:")
+                    send_slides(chat_id, [d])
         except Exception as exc:                                # noqa: BLE001
             traceback.print_exc()
             send(chat_id, f"❌ Fehler bei {url}\n{str(exc)[:400]}")
