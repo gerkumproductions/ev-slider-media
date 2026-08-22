@@ -100,16 +100,24 @@ def _euro(size: int, c) -> Image.Image:
 
 
 def _haken(size: int, c) -> Image.Image:
-    """Schlichter Haken - neutral und immer passend."""
-    img, d = _canvas(size)
-    s = size
-    d.line([(s * .18, s * .52), (s * .40, s * .74)], fill=c, width=STROKE + 2)
-    d.line([(s * .40, s * .74), (s * .84, s * .26)], fill=c, width=STROKE + 2)
-    # Ecken abrunden
-    for punkt in ((s * .18, s * .52), (s * .40, s * .74), (s * .84, s * .26)):
-        r = (STROKE + 2) / 2
-        d.ellipse([punkt[0] - r, punkt[1] - r, punkt[0] + r, punkt[1] + r], fill=c)
-    return img
+    """Feiner Haken im Kreis. Wird vierfach gezeichnet und verkleinert,
+    damit die dünnen Linien sauber und ohne Treppchen aussehen."""
+    f = 4
+    s = size * f
+    img = Image.new("RGBA", (s, s), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    strich = max(2, int(size * 0.028)) * f       # dünn, unabhängig von der Größe
+
+    rand = strich  # Kreis knapp innerhalb der Fläche
+    d.ellipse([rand, rand, s - rand, s - rand], outline=c, width=strich)
+
+    punkte = [(s * .30, s * .51), (s * .44, s * .65), (s * .71, s * .36)]
+    d.line(punkte, fill=c, width=strich, joint="curve")
+    r = strich / 2
+    for x, y in (punkte[0], punkte[-1]):
+        d.ellipse([x - r, y - r, x + r, y + r], fill=c)
+
+    return img.resize((size, size), Image.LANCZOS)
 
 
 DRAWERS = {
