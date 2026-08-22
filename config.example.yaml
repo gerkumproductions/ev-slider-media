@@ -8,20 +8,25 @@ shops:
       shop_name: "Engel & Völkers im Rheinland"
       handle: "@engelvoelkers.rheinland"
     metricool:
-      blog_id: ""                  # blogId aus der Metricool-Adresszeile
+      blog_id: "5661514"           # blogId aus der Metricool-Adresszeile
   niederrhein:
     aliases: ["nr", "nrh"]
     brand:
       shop_name: "Engel & Völkers Niederrhein"
       handle: "@engelvoelkers.niederrhein"
     metricool:
-      blog_id: ""                  # blogId des Niederrhein-Accounts
+      blog_id: "5738428"           # blogId des Niederrhein-Accounts
     # Abweichungen moeglich, z.B. andere Uhrzeiten:
     # schedule:
     #   times: ["10:00"]
 
-# Gilt, wenn in der Nachricht kein Shop genannt wird:
+# Gilt nur noch, wenn genau EIN Shop konfiguriert ist. Bei mehreren Shops
+# ist das Kuerzel in der Nachricht Pflicht (siehe shop_pflicht).
 default_shop: "rheinland"
+
+# true = bei mehreren Shops muss jede Nachricht ein Kuerzel tragen. Fehlt es,
+# fragt der Bot nach, statt still auf default_shop auszuweichen.
+shop_pflicht: true
 
 telegram:
   # Nur noetig, wenn verschiedene Personen aus eigenen Chats posten.
