@@ -13,8 +13,14 @@ import requests
 
 API = "https://api.anthropic.com/v1/messages"
 
-SYSTEM = """Du schreibst Social-Media-Content für einen Engel & Völkers Immobilienshop.
-Tonalität: hochwertig, klar, zurückhaltend – kein Werbe-Superlativ, keine Emojis
+SYSTEM = """Du schreibst Social-Media-Content für Engel & Völkers im Rheinland.
+
+Perspektive: Du schreibst ALS dieser Shop, in der Wir-Form ("wir haben", "unser
+Team", "sprechen Sie uns an"), und sprichst die Leser:innen mit Sie an. Der
+Shop vermarktet die Immobilie selbst - schreibe nie über Engel & Völkers in der
+dritten Person und nie so, als würdest du ein fremdes Angebot weiterempfehlen.
+
+Tonalität: hochwertig, klar, zurückhaltend - kein Werbe-Superlativ, keine Emojis
 in den Bildtiteln, keine erfundenen Fakten. Du antwortest ausschließlich mit
 gültigem JSON, ohne Markdown-Backticks und ohne Vorrede."""
 
@@ -27,16 +33,23 @@ Erzeuge:
    englischen alt-Texte als Vorlage, in derselben Reihenfolge. Ist ein Bild erkennbar
    eine Visualisierung oder ein Homestaging-Rendering, beginne den Titel mit
    "Visualisierung".
-2. "keyword": EIN einzelnes, gut merkbares Stichwort in Grossbuchstaben, das zum Objekt
+2. "ausschliessen": eine Liste der Positionen (0-basiert) aus bild_alt_texte, die
+   KEIN Foto der Immobilie zeigen - also Werbebilder, Portraits, Personen im
+   Beratungsgespraech, Logos, Grafiken oder Stimmungsbilder ohne Objektbezug.
+   Menschen in einem Raum der Immobilie sind KEIN Ausschlussgrund; entscheidend
+   ist, ob das Bild die Immobilie zeigt. Im Zweifel nicht ausschliessen.
+3. "keyword": EIN einzelnes, gut merkbares Stichwort in Grossbuchstaben, das zum Objekt
    passt (z.B. "LOGGIA", "WIEMELHAUSEN", "AUFZUG"). Keine Umlaute, keine Leerzeichen.
-3. "hook": eine einzelne Zeile als Aufhaenger, max. 90 Zeichen, ohne Hashtags.
-4. "body": 3-5 Saetze zum Objekt und zur Lage, als Fliesstext. Maximal 2 dezente Emojis.
+   Steht im Datensatz "vorgegebenes_cta_stichwort", nutze genau dieses.
+4. "hook": eine einzelne Zeile als Aufhaenger, max. 90 Zeichen, ohne Hashtags.
+5. "body": 3-5 Saetze zum Objekt und zur Lage, als Fliesstext. Maximal 2 dezente Emojis.
    Keine Preisangabe erfinden - nur nutzen, wenn im Objektdatensatz vorhanden.
    KEIN Call-to-Action im body, der wird separat gesetzt.
-5. "hashtags": 8-12 passende Hashtags auf Deutsch/Englisch inkl. Ort und Objektart.
+6. "hashtags": 8-12 passende Hashtags auf Deutsch/Englisch inkl. Ort und Objektart.
 
 Antworte als JSON:
-{{"image_titles": [...], "keyword": "...", "hook": "...", "body": "...", "hashtags": [...]}}"""
+{{"image_titles": [...], "ausschliessen": [...], "keyword": "...", "hook": "...",
+ "body": "...", "hashtags": [...]}}"""
 
 
 def _call(api_key: str, model: str, prompt: str, max_tokens: int = 2000) -> str:
@@ -60,8 +73,12 @@ def _call(api_key: str, model: str, prompt: str, max_tokens: int = 2000) -> str:
     return "".join(b.get("text", "") for b in data.get("content", []) if b.get("type") == "text")
 
 
-def generate(ex, cfg) -> dict:
-    """Ergänzt ex.photos[*].title und liefert {caption, hashtags}."""
+def generate(ex, cfg, keyword: str | None = None) -> dict:
+    """Ergänzt ex.photos[*].title und liefert Bausteine für den Posttext.
+
+    keyword: vom Nutzer vorgegebenes CTA-Stichwort. Ist es gesetzt, hat es
+    Vorrang vor dem, was die KI vorschlagen würde.
+    """
     key = cfg.anthropic_key
     n = len(ex.photos)
     if not key:
@@ -69,7 +86,7 @@ def generate(ex, cfg) -> dict:
         for p in ex.photos:
             p.title = p.alt[:60]
         return {"hook": ex.title, "body": ex.description,
-                "keyword": _fallback_keyword(ex),
+                "keyword": keyword or _fallback_keyword(ex),
                 "hashtags": cfg.get("caption.hashtags", [])}
 
     payload = {
@@ -85,6 +102,8 @@ def generate(ex, cfg) -> dict:
         "shop": cfg.get("brand.shop_name"),
         "bild_alt_texte": [p.alt for p in ex.photos],
     }
+    if keyword:
+        payload["vorgegebenes_cta_stichwort"] = keyword
     prompt = PROMPT.format(
         data=json.dumps(payload, ensure_ascii=False, indent=2),
         n=n,
@@ -105,13 +124,40 @@ def generate(ex, cfg) -> dict:
         if not p.title:
             p.title = p.alt[:60]
 
+    # Werbebilder aussortieren - erst KI-Einschaetzung, dann Stichwortpruefung
+    drop = {int(i) for i in out.get("ausschliessen", []) if str(i).isdigit()}
+    keep = [p for i, p in enumerate(ex.photos)
+            if i not in drop and not _is_werbung(p.alt)]
+    if len(keep) >= 2:              # nie den ganzen Slider leeren
+        entfernt = len(ex.photos) - len(keep)
+        if entfernt:
+            print(f"[i] {entfernt} Bild(er) als Werbung/Portrait aussortiert.")
+        ex.photos = keep
+
     return {
         "hook": out.get("hook", ex.title).strip(),
         "body": out.get("body", "").strip(),
-        "keyword": re.sub(r"[^A-Z0-9]", "", (out.get("keyword") or "").upper())
+        "keyword": keyword or re.sub(r"[^A-Z0-9]", "",
+                                     (out.get("keyword") or "").upper())
                    or _fallback_keyword(ex),
         "hashtags": out.get("hashtags") or cfg.get("caption.hashtags", []),
     }
+
+
+# Bilder, die nie in den Slider gehoeren
+# Bewusst eng gehalten: nur eindeutige Werbe- und Servicebilder. Menschen
+# in einem Raum der Immobilie (Homestaging) sollen NICHT aussortiert werden -
+# solche Grenzfaelle entscheidet die KI-Einschaetzung.
+WERBUNG = (
+    "finanzberatung", "beratungsgespräch", "consultation", "advisor",
+    "consultant", "real estate agent", "handshake", "shaking hands",
+    "business meeting", "shop image", "wavy pattern", "engel & völkers logo",
+)
+
+
+def _is_werbung(alt: str) -> bool:
+    a = (alt or "").lower()
+    return any(w in a for w in WERBUNG)
 
 
 def _fallback_keyword(ex) -> str:
@@ -130,7 +176,7 @@ def full_text(result: dict, cfg) -> str:
     """
     kw = result.get("keyword", "EXPOSE")
     cta = cfg.get("caption.cta_template",
-                  "Kommentiere \"{keyword}\" und du bekommst das komplette "
+                  "Kommentieren Sie \"{keyword}\" und Sie erhalten das komplette "
                   "Exposé per DM.").format(keyword=kw)
     tags = " ".join(t if t.startswith("#") else f"#{t}" for t in result.get("hashtags", []))
     blocks = [result.get("hook", "").strip(), cta,
