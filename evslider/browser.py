@@ -44,8 +44,13 @@ NEXT_SELECTORS = [
     ".swiper-button-next",
 ]
 
-# Bilder, die nicht zur Galerie gehören
-EXCLUDE_ALT = ("engel", "völkers", "voelkers", "shop image", "wavy pattern", "logo")
+# Bilder, die nicht zur Galerie gehören. Beim Nachfüllen aus der
+# Seitenstruktur darf so kein Werbebild ein echtes Objektfoto verdrängen.
+EXCLUDE_ALT = (
+    "engel", "völkers", "voelkers", "shop image", "wavy pattern", "logo",
+    "homebuyer", "home buyer", "realtor", "real estate agent", "estate agent",
+    "advisor", "consultant", "handshake", "shaking hands", "consultation",
+)
 
 
 def expected_total(page_text: str) -> int | None:
@@ -174,6 +179,43 @@ def _diagnose(page) -> str:
         return f"Diagnose fehlgeschlagen: {exc}"
 
 
+def _zaehlerstand(page) -> str:
+    try:
+        d = page.evaluate(_JS_CURRENT)
+        return str(d.get("zaehler") or "")
+    except Exception:                                          # noqa: BLE001
+        return ""
+
+
+def _weiterblaettern(page) -> bool:
+    """Ein Bild weiter. Erfolg wird am Zähler geprüft - nicht daran, ob ein
+    Klick möglich war. Erst wenn der Zähler sich ändert, ist wirklich
+    umgeblättert worden.
+    """
+    vorher = _zaehlerstand(page)
+
+    versuche = []
+    for sel in NEXT_SELECTORS:
+        versuche.append(("klick " + sel, lambda s=sel: page.locator(s).last.click(timeout=1200)))
+    versuche.append(("pfeiltaste", lambda: page.keyboard.press("ArrowRight")))
+    # Letzte Rettung: den rechten Bildrand anklicken, dort liegt bei
+    # Bildergalerien meist die Weiter-Fläche.
+    def rechts_klicken():
+        box = page.viewport_size or {"width": 1440, "height": 1000}
+        page.mouse.click(int(box["width"] * 0.95), int(box["height"] * 0.5))
+    versuche.append(("rechter Rand", rechts_klicken))
+
+    for name, aktion in versuche:
+        try:
+            aktion()
+        except Exception:
+            continue
+        page.wait_for_timeout(900)
+        if _zaehlerstand(page) != vorher:
+            return True
+    return False
+
+
 def _current_slide(page) -> tuple[str, str, str]:
     """(uuid, alt-Text, Unterschrift) des gerade sichtbaren Bildes."""
     try:
@@ -257,7 +299,8 @@ def fetch_gallery(url: str, headless: bool = True, max_clicks: int = 40,
                         break
                 except Exception:
                     continue
-            print(f"[i] Bilder-Reiter geöffnet: {reiter}")
+            print(f"[i] Bilder-Reiter geöffnet: {reiter} | Zähler: "
+                  f"{_zaehlerstand(page) or 'keiner'}")
 
             total = expected_total(page.inner_text("body")) or total
 
@@ -288,25 +331,16 @@ def fetch_gallery(url: str, headless: bool = True, max_clicks: int = 40,
                     break
                 if leerlauf >= 6:      # sechsmal dasselbe Bild -> Ende
                     break
-                weiter = False
-                for sel in NEXT_SELECTORS:
-                    try:
-                        btn = page.locator(sel).last
-                        if btn.is_visible(timeout=400):
-                            btn.click(timeout=1500)
-                            weiter = True
-                            break
-                    except Exception:
-                        continue
-                if not weiter:
-                    page.keyboard.press("ArrowRight")
-                page.wait_for_timeout(900)     # Bildwechsel abwarten
+                if not _weiterblaettern(page):
+                    leerlauf += 2
 
             # Fehlt etwas gegenueber dem Zaehler, aus dem DOM nachfuellen.
             # Dann ist die Quelle nicht mehr rein - Werbefilter bleibt aktiv.
             ergaenzt = False
             if total and len(galerie) < total:
                 ergaenzt = True
+                print(f"[i] Diaschau brachte nur {len(galerie)} von {total} - "
+                      f"ergänze aus der Seitenstruktur.")
                 collect()
                 for uuid in order:
                     if uuid not in gesehen and len(galerie) < total:
