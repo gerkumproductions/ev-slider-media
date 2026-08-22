@@ -33,8 +33,9 @@ HIGH_RES = "-/format/jpeg/-/stretch/off/-/progressive/yes/-/resize/2000x/-/quali
 @dataclass
 class Photo:
     uuid: str
-    alt: str = ""
-    title: str = ""          # deutscher Bildtitel (später ggf. per LLM erzeugt)
+    alt: str = ""            # englischer alt-Text der Seite
+    caption: str = ""        # deutsche Bildunterschrift der Seite ("offene Küche")
+    title: str = ""          # was im Slider steht
 
     @property
     def url(self) -> str:
@@ -89,8 +90,8 @@ class Expose:
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
-        d["photos"] = [{"uuid": p.uuid, "alt": p.alt, "title": p.title, "url": p.url}
-                       for p in self.photos]
+        d["photos"] = [{"uuid": p.uuid, "alt": p.alt, "caption": p.caption,
+                        "title": p.title, "url": p.url} for p in self.photos]
         return d
 
 
@@ -299,7 +300,8 @@ def scrape(url: str, browser: str = "auto") -> Expose:
                    "property_type", "floor", "parking", "description", "shop", "agent"):
         if not getattr(full, f_name):
             setattr(full, f_name, getattr(ex, f_name))
-    full.photos = [Photo(uuid=u, alt=a) for u, a in res["photos"]] or ex.photos
+    full.photos = [Photo(uuid=u, alt=a, caption=c)
+                   for u, a, c in res["photos"]] or ex.photos
     full.expected_images = res.get("expected") or ex.expected_images
     full.source = "browser"
 
