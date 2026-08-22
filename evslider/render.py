@@ -190,7 +190,7 @@ class Renderer:
         cell_h = (self.H - grid_top - self.M) // 2
         col_w = self.W // 2
         f_label = self.f.T(28)
-        icon_px = 92
+        icon_px = 62
 
         for i, (label, value) in enumerate(facts):
             cx = col_w * (i % 2) + col_w // 2
@@ -204,7 +204,7 @@ class Renderer:
             if ic is not None:
                 canvas.paste(ic, (cx - ic.width // 2, cy), ic)
 
-            ly = cy + icon_px + 22
+            ly = cy + icon_px + 26
             lw = tracked_width(d, label, f_label, 2.5)
             tracked(d, label, f_label, cx - lw / 2, ly, self.dark, 2.5)
 
