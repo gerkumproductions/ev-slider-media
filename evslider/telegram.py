@@ -148,6 +148,16 @@ def shop_alias_map(cfg) -> dict[str, list[str]]:
             for k, v in (cfg.get("shops") or {}).items()}
 
 
+def shop_hinweis(cfg) -> str:
+    """Kurzliste 'rheinland (rhein, rl)' für Fehlermeldungen und Hilfe."""
+    zeilen = []
+    for key, aliase in shop_alias_map(cfg).items():
+        kurz = ", ".join(aliase) if aliase else ""
+        name = cfg.for_shop(key).get("brand.shop_name", key)
+        zeilen.append(f"· {key}{f' ({kurz})' if kurz else ''} → {name}")
+    return "\n".join(zeilen)
+
+
 def allowed(chat_id: int, cfg) -> bool:
     """Zugriff: entweder über die Shop-Zuordnung oder über die Freigabeliste."""
     if cfg.shop_for_chat(chat_id):
@@ -156,7 +166,49 @@ def allowed(chat_id: int, cfg) -> bool:
     return bool(allow) and str(chat_id) in allow.split(",")
 
 
+def blog_id_pruefen(cfg, chat_id: int) -> bool:
+    """Landet der Post wirklich auf dem Profil dieses Shops?
+
+    Der gefaehrlichste Fehler beim Mehrshop-Betrieb ist eine blogId, die
+    nicht zum Shop gehoert - dann steht ein Niederrhein-Objekt auf dem
+    Rheinland-Profil, und man merkt es erst, wenn der Post draussen ist.
+    Deshalb wird hier verglichen, was in der config.yaml fuer DIESEN Shop
+    steht und was tatsaechlich benutzt wird. Weichen beide ab, ist meist
+    das Secret METRICOOL_BLOG_ID im Weg.
+    """
+    name = cfg.get("brand.shop_name", "diesen Shop")
+    konfiguriert = str(cfg.get("metricool.blog_id", "") or "").strip()
+    wirksam = str(getattr(cfg, "metricool_blog_id", "") or "").strip()
+    mehrere = len(cfg.shop_keys()) > 1
+
+    print(f"[i] Shop: {name} | blogId laut config.yaml: "
+          f"{konfiguriert or '(leer)'} | tatsächlich verwendet: "
+          f"{wirksam or '(leer)'}")
+
+    if konfiguriert and wirksam and konfiguriert != wirksam:
+        send(chat_id,
+             f"❌ Abbruch, sonst landet der Post auf dem falschen Profil.\n\n"
+             f"Für {name} steht in der config.yaml die blogId {konfiguriert}, "
+             f"benutzt würde aber {wirksam}. Vermutlich überschreibt das "
+             f"GitHub-Secret METRICOOL_BLOG_ID die Shop-Einstellung. "
+             f"Das Secret löschen, die blogIds gehören in die config.yaml.")
+        return False
+
+    if mehrere and not konfiguriert:
+        send(chat_id,
+             f"❌ Für {name} ist in der config.yaml keine blogId hinterlegt.\n\n"
+             f"Bei mehreren Shops muss jede blogId dort stehen, sonst kann "
+             f"ich nicht sicher sagen, auf welchem Profil der Post landet. "
+             f"Die Nummer steht in der Metricool-Adresszeile hinter blogId=.")
+        return False
+
+    return True
+
+
 def process(chat_id: int, jobs: list[tuple[str, str]], cfg) -> None:
+    if not blog_id_pruefen(cfg, chat_id):
+        return
+
     renderer = Renderer(cfg)
     slots = publish_mod.plan_slots(cfg, len(jobs))
     out_root = cfg.path(cfg.get("output_dir", "out"))
@@ -190,8 +242,8 @@ def process(chat_id: int, jobs: list[tuple[str, str]], cfg) -> None:
                          f"Bildern gefunden.")
             send(chat_id,
                  f"✅ {ex.title[:90]}\n"
-                 f"{len(paths)} Slides · eingeplant für "
-                 f"{slots[i]:%a %d.%m. %H:%M} Uhr{fehlt}\n\n{text}")
+                 f"{cfg.get('brand.shop_name', '')} · {len(paths)} Slides · "
+                 f"eingeplant für {slots[i]:%a %d.%m. %H:%M} Uhr{fehlt}\n\n{text}")
             send_slides(chat_id, paths)
 
             # Hat die Galerie geklemmt, den Screenshot mitschicken - daran
@@ -229,19 +281,29 @@ def main() -> int:
             continue
         if text.strip() in ("/start", "/hilfe", "/help"):
             shop = cfg.shop_for_chat(chat_id)
-            name = cfg.for_shop(shop).get("brand.shop_name", "?")
-            liste = "\n".join(
-                f"· {k} → {cfg.for_shop(k).get('brand.shop_name')}"
-                for k in cfg.shop_keys())
+            mehrere = len(cfg.shop_keys()) > 1
+            if shop:
+                zuordnung = (f"Dieser Chat gehört fest zu "
+                             f"{cfg.for_shop(shop).get('brand.shop_name')} – "
+                             f"du brauchst kein Kürzel.")
+            elif mehrere:
+                zuordnung = ("Das Shop-Kürzel ist Pflicht. Ohne Kürzel baue "
+                             "ich nichts und frage nach.")
+            else:
+                zuordnung = (f"Ohne Angabe: "
+                             f"{cfg.get('brand.shop_name', '?')}")
             send(chat_id,
                  "Schick mir einen oder mehrere Exposé-Links von "
                  "engelvoelkers.com.\n\n"
-                 "Stichwort für den Call-to-Action einfach dahinter schreiben:\n"
-                 "<link> SUEDGARTEN\n\n"
-                 "Anderer Shop? Namen dazuschreiben, Reihenfolge egal:\n"
-                 "<link> NIEDERRHEIN SUEDGARTEN\n\n"
-                 f"Verfügbare Shops:\n{liste}\n\n"
-                 f"Ohne Angabe: {name}\nChat-ID: {chat_id}")
+                 "Shop-Kürzel davor, Stichwort für den Call-to-Action "
+                 "dahinter – Reihenfolge egal:\n"
+                 "rl <link> SUEDGARTEN\n"
+                 "nr <link> UFERWEG\n\n"
+                 "Ein Kürzel allein in der ersten Zeile gilt für die ganze "
+                 "Nachricht:\n"
+                 "nr\n<link> UFERWEG\n<link> ALTSTADT\n\n"
+                 f"Verfügbare Shops:\n{shop_hinweis(cfg)}\n\n"
+                 f"{zuordnung}\nChat-ID: {chat_id}")
             continue
         found = parse_message(text, shop_alias_map(cfg))
         if found:
@@ -253,13 +315,34 @@ def main() -> int:
         for chat_id, entries in jobs.items():
             # nach Shop trennen, damit jeder Shop eigene Termine bekommt
             nach_shop: dict[str, list[tuple[str, str]]] = {}
+            ohne_shop: list[str] = []
             seen = set()
+            chat_shop = cfg.shop_for_chat(chat_id)
+            mehrere = len(cfg.shop_keys()) > 1
+            pflicht = bool(cfg.get("shop_pflicht", True))
+
             for url, kw, shop in entries:
                 if url in seen:
                     continue
                 seen.add(url)
-                key = shop or cfg.shop_for_chat(chat_id) or cfg.get("default_shop")
+                key = shop or chat_shop
+                # Bei mehreren Shops NICHT stillschweigend auf default_shop
+                # ausweichen - sonst landet ein Objekt auf dem falschen
+                # Profil und niemand merkt es.
+                if not key and mehrere and pflicht:
+                    ohne_shop.append(url)
+                    continue
+                key = key or cfg.get("default_shop")
                 nach_shop.setdefault(key, []).append((url, kw))
+
+            if ohne_shop:
+                liste = "\n".join(u[:80] for u in ohne_shop[:5])
+                send(chat_id,
+                     f"❓ Für welchen Shop?\n\n"
+                     f"Bei {len(ohne_shop)} Link(s) fehlt das Kürzel. Schick "
+                     f"sie noch einmal mit Kürzel davor:\n\n"
+                     f"{shop_hinweis(cfg)}\n\nBetroffen:\n{liste}")
+
             for shop_key, liste in nach_shop.items():
                 process(chat_id, liste, cfg.for_shop(shop_key))
     finally:
