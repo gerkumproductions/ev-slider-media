@@ -179,11 +179,33 @@ def plan_slots(cfg, count: int) -> list[dt.datetime]:
                 ordered.append(cand)
 
     # Belegte Termine aussortieren. Die Reihenfolge bleibt dabei erhalten.
+    #
+    # Das darf den Lauf NIE abbrechen: fehlt evslider/belegung.py oder liegt
+    # dort eine aeltere Fassung, wird ungeprueft eingeplant und im Protokoll
+    # steht warum. Ein doppelter Termin ist aergerlich, ein abgebrochener
+    # Lauf kostet den ganzen Post.
+    belegung = None
     try:
-        from . import belegung
-    except ImportError:                                        # direkter Aufruf
-        import belegung                                        # type: ignore
-    ordered = belegung.freie_kandidaten(cfg, ordered)
+        from . import belegung                                 # type: ignore
+    except ImportError:
+        try:
+            import belegung                                    # type: ignore
+        except ImportError:
+            pass
+
+    pruefen = getattr(belegung, "freie_kandidaten", None)
+    if pruefen is None:
+        print("[i] Belegungsprüfung nicht verfügbar: evslider/belegung.py fehlt "
+              "oder ist veraltet (erwartet wird die Funktion 'freie_kandidaten', "
+              "Fassung 2026-08-22b). Termine werden ungeprüft vergeben.")
+    else:
+        print(f"[i] Belegungsprüfung aktiv (belegung.py "
+              f"{getattr(belegung, 'VERSION', 'ohne Versionsangabe')}).")
+        try:
+            ordered = pruefen(cfg, ordered)
+        except Exception as exc:                               # noqa: BLE001
+            print(f"[i] Belegungsprüfung übersprungen ({exc}) - "
+                  f"Termine werden ungeprüft vergeben.")
 
     gewaehlt = sorted(ordered[:count])
     for t in gewaehlt:
