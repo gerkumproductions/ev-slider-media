@@ -302,8 +302,11 @@ def fetch_gallery(url: str, headless: bool = True, max_clicks: int = 40,
                     page.keyboard.press("ArrowRight")
                 page.wait_for_timeout(900)     # Bildwechsel abwarten
 
-            # Fehlt etwas gegenueber dem Zaehler, aus dem DOM nachfuellen
+            # Fehlt etwas gegenueber dem Zaehler, aus dem DOM nachfuellen.
+            # Dann ist die Quelle nicht mehr rein - Werbefilter bleibt aktiv.
+            ergaenzt = False
             if total and len(galerie) < total:
+                ergaenzt = True
                 collect()
                 for uuid in order:
                     if uuid not in gesehen and len(galerie) < total:
@@ -318,7 +321,9 @@ def fetch_gallery(url: str, headless: bool = True, max_clicks: int = 40,
                       f"{mit} mit Unterschrift.")
                 if not mit:
                     print("[i] Diagnose (Umfeld des Zählers):", _diagnose(page)[:400])
-                return {"html": page.content(), "photos": galerie, "expected": total}
+                # Aus der Galerie: hier liegen nur Objektfotos, keine Werbung.
+                return {"html": page.content(), "photos": galerie,
+                        "expected": total, "aus_galerie": not ergaenzt}
 
             print("[i] Vollbild-Ansicht lieferte zu wenig - nutze die Seitenstruktur.")
             stale = 0
@@ -353,6 +358,6 @@ def fetch_gallery(url: str, headless: bool = True, max_clicks: int = 40,
             html = page.content()
             return {"html": html,
                     "photos": [(u, seen[u][0], seen[u][1]) for u in order],
-                    "expected": total}
+                    "expected": total, "aus_galerie": False}
         finally:
             browser.close()
