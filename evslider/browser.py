@@ -49,17 +49,42 @@ def expected_total(page_text: str) -> int | None:
     return best
 
 
-def _harvest(page) -> list[tuple[str, str]]:
-    """(uuid, alt) aller Uploadcare-Bilder im aktuellen DOM, in Dokumentreihenfolge."""
-    raw = page.eval_on_selector_all(
-        "img, source",
-        """els => els.map(e => ({
-             src: e.currentSrc || e.src || e.srcset || '',
-             alt: e.alt || (e.parentElement && e.parentElement.querySelector('img')
-                            ? e.parentElement.querySelector('img').alt : '') || ''
-           }))""",
-    )
-    out: list[tuple[str, str]] = []
+# Sucht zu jedem Bild die sichtbare deutsche Bildunterschrift ("offene Küche").
+# Die steht je nach Ansicht in einer figcaption oder in einem kurzen Textknoten
+# direkt unter dem Bild. Der alt-Text ist nur die englische Notloesung.
+_JS_HARVEST = r"""
+els => {
+  const kurz = t => t && t.trim().length > 0 && t.trim().length < 70;
+  const bildunterschrift = el => {
+    const fig = el.closest('figure');
+    const fc = fig && fig.querySelector('figcaption');
+    if (fc && kurz(fc.innerText)) return fc.innerText.trim();
+    // Nur im Bereich suchen, der genau DIESES Bild enthaelt - sonst erbt ein
+    // Bild ohne Unterschrift die des Nachbarn.
+    let p = el.parentElement;
+    for (let i = 0; i < 4 && p; i++, p = p.parentElement) {
+      if (p.querySelectorAll('img').length > 1) break;
+      const kandidaten = [...p.querySelectorAll('figcaption,p,span,div')]
+        .filter(n => n.children.length === 0 && kurz(n.innerText))
+        .map(n => n.innerText.trim())
+        .filter(t => !/^\d+\s*\/\s*\d+$/.test(t));
+      if (kandidaten.length) return kandidaten[kandidaten.length - 1];
+    }
+    return '';
+  };
+  return els.map(e => ({
+    src: e.currentSrc || e.src || e.srcset || '',
+    alt: e.alt || '',
+    caption: bildunterschrift(e)
+  }));
+}
+"""
+
+
+def _harvest(page) -> list[tuple[str, str, str]]:
+    """(uuid, alt, bildunterschrift) aller Uploadcare-Bilder im aktuellen DOM."""
+    raw = page.eval_on_selector_all("img, source", _JS_HARVEST)
+    out: list[tuple[str, str, str]] = []
     for item in raw:
         m = UPLOADCARE_RE.search(item.get("src") or "")
         if not m:
@@ -67,7 +92,7 @@ def _harvest(page) -> list[tuple[str, str]]:
         alt = (item.get("alt") or "").strip()
         if any(x in alt.lower() for x in EXCLUDE_ALT):
             continue
-        out.append((m.group(1), alt))
+        out.append((m.group(1), alt, (item.get("caption") or "").strip()))
     return out
 
 
@@ -104,16 +129,16 @@ def fetch_gallery(url: str, headless: bool = True, max_clicks: int = 40,
 
             total = expected_total(page.inner_text("body"))
 
-            seen: dict[str, str] = {}
+            seen: dict[str, tuple[str, str]] = {}     # uuid -> (alt, caption)
             order: list[str] = []
 
             def collect():
-                for uuid, alt in _harvest(page):
+                for uuid, alt, caption in _harvest(page):
+                    alt_alt, alt_cap = seen.get(uuid, ("", ""))
                     if uuid not in seen:
-                        seen[uuid] = alt
                         order.append(uuid)
-                    elif alt and not seen[uuid]:
-                        seen[uuid] = alt
+                    # Einmal gefundene Angaben nicht durch leere ueberschreiben
+                    seen[uuid] = (alt or alt_alt, caption or alt_cap)
 
             collect()
             # Galerie öffnen (Vollbild zeigt oft alle Bilder auf einmal)
@@ -149,7 +174,7 @@ def fetch_gallery(url: str, headless: bool = True, max_clicks: int = 40,
 
             html = page.content()
             return {"html": html,
-                    "photos": [(u, seen[u]) for u in order],
+                    "photos": [(u, seen[u][0], seen[u][1]) for u in order],
                     "expected": total}
         finally:
             browser.close()
