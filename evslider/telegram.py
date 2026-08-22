@@ -11,6 +11,7 @@ from __future__ import annotations
 import os
 import re
 import sys
+import time
 import traceback
 from pathlib import Path
 
@@ -271,14 +272,18 @@ def process(chat_id: int, jobs: list[tuple[str, str]], cfg) -> None:
             send(chat_id, f"❌ Fehler bei {url}\n{str(exc)[:400]}")
 
 
-def main() -> int:
-    global UMLAUTE_ERHALTEN
-    cfg = config_mod.load(os.environ.get("EVSLIDER_CONFIG", "config.yaml"))
-    UMLAUTE_ERHALTEN = bool(cfg.get("caption.keyword_umlaute", True))
-    updates = call("getUpdates", timeout=0) or []
+def einmal_abholen(cfg, warten: int = 0) -> bool:
+    """Ein Durchgang: Nachrichten holen und verarbeiten.
+
+    `warten` ist die lange Abfrage bei Telegram: Die Verbindung bleibt so
+    viele Sekunden offen, bis eine Nachricht eintrifft. Damit reagiert der
+    Bot binnen Sekunden, statt bis zum naechsten Lauf zu schlafen.
+
+    Rueckgabe: True, wenn etwas zu tun war.
+    """
+    updates = call("getUpdates", timeout=warten) or []
     if not updates:
-        print("Keine neuen Nachrichten.")
-        return 0
+        return False
 
     last_id = max(u["update_id"] for u in updates)
     jobs: dict[int, list[str]] = {}
@@ -362,6 +367,43 @@ def main() -> int:
         # Nachrichten als abgeholt bestätigen - auch im Fehlerfall, sonst
         # würde derselbe Link beim nächsten Lauf erneut verarbeitet.
         call("getUpdates", offset=last_id + 1, timeout=0)
+    return True
+
+
+def main() -> int:
+    global UMLAUTE_ERHALTEN
+    cfg = config_mod.load(os.environ.get("EVSLIDER_CONFIG", "config.yaml"))
+    UMLAUTE_ERHALTEN = bool(cfg.get("caption.keyword_umlaute", True))
+
+    try:
+        minuten = float(os.environ.get("EVSLIDER_POLL_MINUTES", "0") or 0)
+    except ValueError:
+        minuten = 0.0
+
+    if minuten <= 0:                       # alter Betrieb: einmal nachsehen
+        if not einmal_abholen(cfg):
+            print("Keine neuen Nachrichten.")
+        return 0
+
+    ende = time.time() + minuten * 60
+    print(f"[i] Warte bis zu {minuten:g} Minuten auf Nachrichten "
+          f"(lange Abfrage bei Telegram).")
+    durchgaenge = 0
+    while True:
+        rest = ende - time.time()
+        if rest <= 1:
+            break
+        # Telegram erlaubt bis zu 50 Sekunden offene Verbindung.
+        beginn = time.time()
+        etwas = einmal_abholen(cfg, warten=int(min(50, rest)))
+        durchgaenge += 1 if etwas else 0
+        # Bremse: Kommt die Antwort sofort zurueck (Fehler, Zeitüberschreitung
+        # oder eine Telegram-Fassung ohne lange Abfrage), darf die Schleife
+        # nicht heisslaufen und die API zuspammen.
+        gedauert = time.time() - beginn
+        if not etwas and gedauert < 3:
+            time.sleep(min(3 - gedauert, max(0.0, ende - time.time())))
+    print(f"[i] Wartezeit vorbei. {durchgaenge} Nachricht(en) verarbeitet.")
     return 0
 
 
