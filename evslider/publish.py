@@ -152,6 +152,10 @@ def plan_slots(cfg, count: int) -> list[dt.datetime]:
     Strategie: erst ein Post pro Tag (Mo–Sa) zur Primärzeit – das gibt den
     größten Abstand. Reicht das nicht, kommt die zweite Uhrzeit dazu, danach
     rollt es in die Folgewoche.
+
+    Vor der Auswahl wird bei Metricool nachgefragt, welche dieser Termine
+    schon belegt sind. Ohne diesen Schritt bekam jeder Lauf denselben Termin,
+    weil das Tool ja nur seine eigene Rechnung kennt und nicht den Kalender.
     """
     tz = ZoneInfo(cfg.get("schedule.timezone", "Europe/Berlin"))
     now = dt.datetime.now(tz)
@@ -173,9 +177,18 @@ def plan_slots(cfg, count: int) -> list[dt.datetime]:
                 if cand < now + lead or cand in ordered:
                     continue
                 ordered.append(cand)
-        if len(ordered) >= count:
-            break
-    return sorted(ordered[:count])
+
+    # Belegte Termine aussortieren. Die Reihenfolge bleibt dabei erhalten.
+    try:
+        from . import belegung
+    except ImportError:                                        # direkter Aufruf
+        import belegung                                        # type: ignore
+    ordered = belegung.freie_kandidaten(cfg, ordered)
+
+    gewaehlt = sorted(ordered[:count])
+    for t in gewaehlt:
+        print(f"[i] Termin: {t:%a %d.%m.%Y %H:%M}")
+    return gewaehlt
 
 
 def next_slot(cfg, offset_index: int = 0) -> dt.datetime:
