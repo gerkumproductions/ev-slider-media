@@ -110,11 +110,21 @@ def _eigene_reihenfolge(html: str) -> list[str]:
     schnitt = min((html.find(m) for m in FREMD_MARKER if html.find(m) > 0),
                   default=-1)
     bereich = html[:schnitt] if schnitt > 0 else html
+    rest = html[schnitt:] if schnitt > 0 else ""
+
+    # Logos und Shop-Grafiken tauchen auch bei den fremden Objekten weiter
+    # unten auf. Echte Objektfotos gibt es nur einmal, im eigenen Bereich.
+    auch_woanders = set(UPLOADCARE_RE.findall(rest))
+
     gesehen, out = set(), []
     for uuid in UPLOADCARE_RE.findall(bereich):
-        if uuid not in gesehen:
-            gesehen.add(uuid)
-            out.append(uuid)
+        if uuid in gesehen or uuid in auch_woanders:
+            continue
+        # Mehrfach wiederholte Bilder sind Logos oder Platzhalter
+        if bereich.count(uuid) > 4:
+            continue
+        gesehen.add(uuid)
+        out.append(uuid)
     return out
 
 
