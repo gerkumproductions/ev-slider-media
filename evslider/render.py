@@ -143,13 +143,25 @@ class Renderer:
             d.text((text_x, y + 18), loc, font=f_loc, fill=self.light)
         return canvas.convert("RGB")
 
-    @staticmethod
-    def location_line(ex: Expose) -> str:
-        """'Wiemelhausen, Bochum' -> 'Bochum Wiemelhausen'."""
+    # Bundeslaender stehen bei jedem Objekt gleich da und bringen nichts.
+    BUNDESLAENDER = {
+        "baden-württemberg", "bayern", "berlin", "brandenburg", "bremen",
+        "hamburg", "hessen", "mecklenburg-vorpommern", "niedersachsen",
+        "nordrhein-westfalen", "rheinland-pfalz", "saarland", "sachsen",
+        "sachsen-anhalt", "schleswig-holstein", "thüringen",
+    }
+
+    @classmethod
+    def location_line(cls, ex: Expose) -> str:
+        """'Siegburg, Nordrhein-Westfalen' -> 'Siegburg'
+           'Wiemelhausen, Bochum'          -> 'Bochum Wiemelhausen'"""
         if not ex.location:
             return ""
         parts = [p.strip() for p in ex.location.split(",") if p.strip()]
-        return " ".join(reversed(parts[:2])) if len(parts) >= 2 else parts[0]
+        parts = [p for p in parts if p.lower() not in cls.BUNDESLAENDER]
+        if not parts:
+            return ""
+        return " ".join(reversed(parts[:2]))
 
     # -- Slide 2: Fakten --
     def facts_slide(self, ex: Expose, photo: Image.Image | None,
@@ -221,8 +233,10 @@ class Renderer:
             raise RuntimeError("Keine Bilder gefunden.")
 
         def cap(i: int) -> str:
+            """Vorrang: Bildunterschrift der Website, dann erzeugter Titel."""
             if i < len(ex.photos):
-                return ex.photos[i].title or ex.photos[i].alt
+                p = ex.photos[i]
+                return p.caption or p.title or ""
             return ""
 
         slides = [self.title_slide(ex, images[0])]
