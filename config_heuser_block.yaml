@@ -1,0 +1,20 @@
+# Ergänzung in config.yaml — nur der neue Shop.
+shops:
+  heuser:
+    name: Heuser Immobilien
+    instagram_handle: "@___"        # fehlt noch
+    metricool_blog_id: 5668636
+    slides:
+      layout: heuser                 # wählt HeuserLayout
+      palette:                       # aus den Referenz-Slides gemessen
+        bg: "#F5F0E8"
+        accent: "#90806D"
+        headline: "#2B2721"
+        body: "#3D3933"
+        rule: "#A89A8A"
+        on_photo: "#FFFFFF"
+      fonts:                         # Platzhalter bis die Hausschriften da sind
+        display: fonts/heuser/Display-Regular.ttf
+        body: fonts/heuser/Sans-Regular.ttf
+        eyebrow: fonts/heuser/Sans-Medium.ttf
+      geom: {}                       # überschreibt einzelne Maße aus GEOM
