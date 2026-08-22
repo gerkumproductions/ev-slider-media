@@ -174,9 +174,12 @@ def process(chat_id: int, jobs: list[tuple[str, str]], cfg) -> None:
 
             texts = caption_mod.generate(ex, cfg, keyword=keyword or None)
             text = caption_mod.full_text(texts, cfg)
+            # Ordner je Shop, damit sich zwei Standorte nicht überschreiben.
+            # Wichtig: Der Shop gehört in den ORDNERPFAD, nicht in den Dateinamen.
             shop_slug = slugify(cfg.get("brand.handle", "shop").lstrip("@"))
-            slug = f"{shop_slug}/{slugify(ex.location or ex.title)}-{ex.ev_id or i}"
-            paths = save_all(renderer.build(ex), out_root / slug, slug)
+            slug = f"{slugify(ex.location or ex.title)}-{ex.ev_id or i}"
+            ziel = out_root / shop_slug / slug
+            paths = save_all(renderer.build(ex), ziel, slug)
 
             image_urls = publish_mod.upload_images(paths, cfg)
             publish_mod.schedule_post(cfg, text, image_urls, slots[i])
