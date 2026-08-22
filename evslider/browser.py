@@ -15,6 +15,26 @@ UPLOADCARE_RE = re.compile(
 )
 COUNTER_RE = re.compile(r"\b(\d{1,2})\s*/\s*(\d{1,3})\b")
 
+# Beschriftungen von Bedienelementen, die keine Bildunterschrift sind.
+# "go to next image" stammt vom Weiter-Pfeil und stand schon als Bildtitel
+# im fertigen Slide - deshalb wird hier zweimal gefiltert: im Browser
+# (Bedienelemente scheiden als Kandidat aus) und hier als Netz.
+UI_TEXT_RE = re.compile(
+    r"^\s*(go\s+to\b|gehe\s+zu\b|next\b|previous\b|prev\b|weiter\b|zur[üu]ck\b"
+    r"|n[äa]chste|vorherige|schlie[ßs]en\b|close\b|zoom|vergr[öo]|verklein"
+    r"|vollbild\b|fullscreen\b|men[üu]\b|teilen\b|share\b|merken\b|drucken\b"
+    r"|play\b|pause\b|bild\s*\d+\s*$|image\s*\d+\s*$)",
+    re.IGNORECASE)
+
+
+def _saubere_unterschrift(text: str) -> str:
+    """Leere Zeichenkette, wenn der Text eine Bedienbeschriftung ist."""
+    t = (text or "").strip()
+    if not t or UI_TEXT_RE.match(t):
+        return ""
+    return t
+
+
 # Auffuellen aus dem Quelltext ist verboten: dabei geraten Logos und
 # Platzhalter in den Slider. Es zaehlt nur, was aus der Galerie kommt.
 AUFFUELLEN = False
@@ -90,6 +110,7 @@ def _position(zaehler: str) -> tuple[int, int]:
 _JS_HARVEST = r"""
 els => {
   const kurz = t => t && t.trim().length > 0 && t.trim().length < 70;
+  const UI_HARVEST = /^\s*(go to|gehe zu|next|previous|prev|weiter|zur(ü|u)ck|n(ä|a)chste|vorherige|schlie(ß|s)en|close|zoom|vergr(ö|o)|verklein|vollbild|fullscreen|men(ü|u)|teilen|share|merken|drucken|play|pause)/i;
   const bildunterschrift = el => {
     const fig = el.closest('figure');
     const fc = fig && fig.querySelector('figcaption');
@@ -101,8 +122,11 @@ els => {
       if (p.querySelectorAll('img').length > 1) break;
       const kandidaten = [...p.querySelectorAll('figcaption,p,span,div')]
         .filter(n => n.children.length === 0 && kurz(n.innerText))
+        .filter(n => !(n.closest && n.closest(
+          'button,a,[role="button"],[role="tab"],nav,[aria-hidden="true"]')))
         .map(n => n.innerText.trim())
-        .filter(t => !/^\d+\s*\/\s*\d+$/.test(t));
+        .filter(t => !/^\d+\s*\/\s*\d+$/.test(t))
+        .filter(t => !UI_HARVEST.test(t));
       if (kandidaten.length) return kandidaten[kandidaten.length - 1];
     }
     return '';
@@ -169,7 +193,8 @@ def _harvest(page, erlaubt: set[str] | None = None) -> list[tuple[str, str, str]
         alt = (item.get("alt") or "").strip()
         if any(x in alt.lower() for x in EXCLUDE_ALT):
             continue
-        out.append((m.group(1), alt, (item.get("caption") or "").strip()))
+        out.append((m.group(1), alt,
+                    _saubere_unterschrift(item.get("caption"))))
     return out
 
 
@@ -188,6 +213,21 @@ _JS_CURRENT = r"""
 () => {
   const kurz = t => t && t.trim().length > 0 && t.trim().length < 70;
   const istZaehler = t => /^\d+\s*\/\s*\d+$/.test((t || '').trim());
+  // Beschriftungen von Pfeilen, Schaltflaechen und Vorlesehilfen. Ohne das
+  // landete "go to next image" als Bildtitel im Slide.
+  const UI = /^\s*(go to|gehe zu|next|previous|prev|weiter|zur(ü|u)ck|n(ä|a)chste|vorherige|schlie(ß|s)en|close|zoom|vergr(ö|o)|verklein|vollbild|fullscreen|men(ü|u)|teilen|share|merken|drucken|play|pause|bild\s*\d+\s*$|image\s*\d+\s*$)/i;
+  const bedienelement = n => !!(n.closest &&
+    n.closest('button,a,[role="button"],[role="tab"],[role="navigation"],nav,[aria-hidden="true"]'));
+  const sichtbar = n => {
+    const r = n.getBoundingClientRect();
+    return r.width > 1 && r.height > 1;
+  };
+  const taugt = n => {
+    const t = (n.innerText || '').trim();
+    return kurz(t) && !istZaehler(t) && !UI.test(t)
+           && !bedienelement(n) && sichtbar(n);
+  };
+
   const blaetter = [...document.querySelectorAll('span,div,p,figcaption')]
     .filter(n => n.children.length === 0);
 
@@ -198,8 +238,8 @@ _JS_CURRENT = r"""
     for (let i = 0; i < 3 && p && !caption; i++, p = p.parentElement) {
       const t = [...p.querySelectorAll('span,div,p,figcaption')]
         .filter(n => n.children.length === 0)
-        .map(n => (n.innerText || '').trim())
-        .filter(t => kurz(t) && !istZaehler(t));
+        .filter(taugt)
+        .map(n => n.innerText.trim());
       if (t.length) caption = t[0];
     }
   }
@@ -367,7 +407,7 @@ def _current_slide(page) -> tuple[str, str, str, str, list]:
     m = UPLOADCARE_RE.search(d.get("src") or "")
     return ((m.group(1) if m else ""),
             (d.get("alt") or "").strip(),
-            (d.get("caption") or "").strip(),
+            _saubere_unterschrift(d.get("caption")),
             (d.get("zaehler") or "").strip(),
             list(d.get("verworfen") or []))
 
