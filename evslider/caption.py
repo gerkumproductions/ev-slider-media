@@ -133,7 +133,11 @@ def generate(ex, cfg, keyword: str | None = None) -> dict:
         if not (p.caption or p.title):
             p.title = p.alt[:60]
 
-    ex.photos = _ohne_werbung(ex.photos, out.get("ausschliessen", []))
+    if getattr(ex, "aus_galerie", False):
+        # Direkt aus der Galerie geholt - dort steht nur, was zum Objekt gehört.
+        print("[i] Bilder stammen aus der Galerie - kein Werbefilter nötig.")
+    else:
+        ex.photos = _ohne_werbung(ex.photos, out.get("ausschliessen", []))
 
     return {
         "hook": out.get("hook", ex.title).strip(),
@@ -184,6 +188,9 @@ def _ohne_werbung(photos: list, ki_liste) -> list:
               f"Es gilt nur die Stichwortprüfung.")
         raus = per_stichwort
 
+    for i in sorted(raus):
+        if i < len(photos):
+            print(f"[i]   aussortiert: {photos[i].alt[:70]!r}")
     keep = [p for i, p in enumerate(photos) if i not in raus]
     if len(keep) < 2:               # nie den ganzen Slider leeren
         return photos
