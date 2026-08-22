@@ -65,7 +65,7 @@ schedule:
 
 metricool:
   auto_publish: true
-  networks: ["instagram"]
+  networks: ["instagram", "facebook", "linkedin"]
   normalize_media: true   # Bilder vor dem Einplanen auf Metricools Server kopieren
 
 hosting:
