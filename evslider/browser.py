@@ -287,7 +287,7 @@ def _weiterblaettern(page) -> bool:
             aktion()
         except Exception:
             continue
-        page.wait_for_timeout(900)
+        page.wait_for_timeout(1200)
         if _zaehlerstand(page) != vorher:
             if name != _weiterblaettern.zuletzt:
                 print(f"[i] Weiterblättern per: {name}")
@@ -407,7 +407,14 @@ def fetch_gallery(url: str, headless: bool = True, max_clicks: int = 40,
             schritte = max((total or 0) * 2, 24)
             leerlauf = 0
             for _ in range(schritte):
+                # Grosse Fotos brauchen einen Moment. Mehrfach nachsehen,
+                # bis ein neues Bild wirklich geladen ist.
                 uuid, alt, caption = _current_slide(page)
+                for _versuch in range(6):
+                    if uuid and uuid not in gesehen:
+                        break
+                    page.wait_for_timeout(700)
+                    uuid, alt, caption = _current_slide(page)
                 total = total or expected_total(page.inner_text("body"))
                 # Dieselbe Unterschrift zweimal heißt: die Zuordnung stimmt
                 # nicht. Dann lieber keine als eine falsche.
