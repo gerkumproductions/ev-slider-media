@@ -37,9 +37,11 @@ Erzeuge:
    KEIN reines Objektfoto sind. Ausschliessen: alles, worauf Menschen zu sehen
    sind (Paare, Familien, Makler, Interessenten, Beratungsszenen), ausserdem
    Logos, Grafiken, Karten und Stimmungsbilder ohne Objektbezug.
-   Ein Objektfoto zeigt Raeume, Gebaeude, Garten oder Aussicht - ohne Personen.
-   Im Zweifel AUSSCHLIESSEN: ein Bild zu wenig ist besser als ein Werbebild
-   im Slider.
+   Ein Objektfoto zeigt Raeume, Gebaeude, Garten oder Aussicht.
+   Schliesse NUR aus, wenn Personen eindeutig das Motiv sind (Werbe- oder
+   Stockbilder) oder das Bild klar nichts mit der Immobilie zu tun hat.
+   Leere Raeume, Baustellen, unscharfe oder schlichte Aufnahmen bleiben drin.
+   Im Zweifel BEHALTEN.
 3. "keyword": EIN einzelnes, gut merkbares Stichwort in Grossbuchstaben, das zum Objekt
    passt (z.B. "LOGGIA", "WIEMELHAUSEN", "AUFZUG"). Keine Umlaute, keine Leerzeichen.
    Steht im Datensatz "vorgegebenes_cta_stichwort", nutze genau dieses.
@@ -131,15 +133,7 @@ def generate(ex, cfg, keyword: str | None = None) -> dict:
         if not (p.caption or p.title):
             p.title = p.alt[:60]
 
-    # Werbebilder aussortieren - erst KI-Einschaetzung, dann Stichwortpruefung
-    drop = {int(i) for i in out.get("ausschliessen", []) if str(i).isdigit()}
-    keep = [p for i, p in enumerate(ex.photos)
-            if i not in drop and not _is_werbung(p.alt)]
-    if len(keep) >= 2:              # nie den ganzen Slider leeren
-        entfernt = len(ex.photos) - len(keep)
-        if entfernt:
-            print(f"[i] {entfernt} Bild(er) als Werbung/Portrait aussortiert.")
-        ex.photos = keep
+    ex.photos = _ohne_werbung(ex.photos, out.get("ausschliessen", []))
 
     return {
         "hook": out.get("hook", ex.title).strip(),
@@ -155,21 +149,48 @@ def generate(ex, cfg, keyword: str | None = None) -> dict:
 # E&V blendet in die Galerien Stock- und Werbebilder ein, auf denen Menschen
 # das Motiv sind (Paare, Makler, Beratungsszenen). Die gehoeren nie in den
 # Slider. Objektfotos zeigen Raeume - dort kommen diese Woerter nicht vor.
+# Nur eindeutige Begriffe. Zu allgemeine Woerter ("person", "people", "logo")
+# treffen sonst harmlose Raumbeschreibungen und leeren den Slider.
 WERBUNG = (
-    # Personen als Motiv
+    # Personen eindeutig als Motiv
     "homebuyer", "home buyer", "house hunter", "realtor", "real estate agent",
-    "estate agent", "broker", "advisor", "consultant", "couple", "family",
-    "people", "person", "man and woman", "woman and man", "smiling",
-    "handshake", "shaking hands", "talking to", "viewing a", "looking at a",
+    "estate agent", "advisor", "consultant", "couple", "family",
+    "man and woman", "woman and man", "handshake", "shaking hands",
+    "talking to a", "smiling at",
     # Beratung und Werbung
-    "finanzberatung", "beratungsgespräch", "consultation", "meeting",
-    "shop image", "wavy pattern", "engel & völkers logo", "logo",
+    "finanzberatung", "beratungsgespräch", "consultation",
+    "shop image", "wavy pattern", "engel & völkers logo",
 )
 
 
 def _is_werbung(alt: str) -> bool:
     a = (alt or "").lower()
     return any(w in a for w in WERBUNG)
+
+
+def _ohne_werbung(photos: list, ki_liste) -> list:
+    """Werbebilder entfernen - aber mit Notbremse.
+
+    Sortiert die KI zu viel aus, ist der Slider halb leer. Deshalb: Wenn mehr
+    als ein Drittel wegfallen wuerde, gilt nur noch die Stichwortpruefung,
+    denn die belegt den Ausschluss nachweisbar am alt-Text.
+    """
+    ki = {int(i) for i in ki_liste if str(i).isdigit()}
+    per_stichwort = {i for i, p in enumerate(photos) if _is_werbung(p.alt)}
+
+    raus = ki | per_stichwort
+    if len(raus) > max(1, len(photos) // 3):
+        print(f"[i] KI wollte {len(ki)} Bild(er) aussortieren - zu viele. "
+              f"Es gilt nur die Stichwortprüfung.")
+        raus = per_stichwort
+
+    keep = [p for i, p in enumerate(photos) if i not in raus]
+    if len(keep) < 2:               # nie den ganzen Slider leeren
+        return photos
+    if len(keep) < len(photos):
+        print(f"[i] {len(photos) - len(keep)} Bild(er) als Werbung aussortiert, "
+              f"{len(keep)} bleiben.")
+    return keep
 
 
 def _fallback_keyword(ex) -> str:
