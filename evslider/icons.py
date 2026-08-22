@@ -73,17 +73,19 @@ def _kalender(size: int, c) -> Image.Image:
 
 
 def _zimmer(size: int, c) -> Image.Image:
-    """Raum-Würfel mit Tür und Fenster."""
+    """Grundriss mit zwei Räumen und Tür - klarer als eine 3D-Ansicht."""
     img, d = _canvas(size)
     s = size
-    d.polygon([(s * .16, s * .30), (s * .62, s * .12), (s * .90, s * .30),
-               (s * .90, s * .74), (s * .44, s * .92), (s * .16, s * .74)],
-              outline=c, width=STROKE)
-    d.line([(s * .44, s * .48), (s * .44, s * .92)], fill=c, width=STROKE)
-    d.line([(s * .16, s * .30), (s * .44, s * .48)], fill=c, width=STROKE)
-    d.line([(s * .44, s * .48), (s * .90, s * .30)], fill=c, width=STROKE)
-    d.rectangle([s * .56, s * .44, s * .74, s * .62], outline=c, width=3)   # Fenster
-    d.rectangle([s * .24, s * .56, s * .36, s * .82], outline=c, width=3)   # Tür
+    aussen = [s * .14, s * .20, s * .86, s * .80]
+    d.rectangle(aussen, outline=c, width=STROKE)
+    # Trennwand mit Türöffnung
+    x = s * .50
+    d.line([(x, s * .20), (x, s * .40)], fill=c, width=STROKE)
+    d.line([(x, s * .60), (x, s * .80)], fill=c, width=STROKE)
+    # Türblatt: kleiner Viertelkreis in der Öffnung
+    r = s * .20
+    d.arc([x, s * .40, x + 2 * r, s * .40 + 2 * r], 90, 180, fill=c, width=3)
+    d.line([(x, s * .40), (x, s * .60)], fill=c, width=3)
     return img
 
 
