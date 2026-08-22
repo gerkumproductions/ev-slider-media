@@ -95,13 +95,24 @@ def _match_shop(wort: str, shops: dict[str, list[str]]) -> str:
     return ""
 
 
+# Umlaute im CTA-Stichwort bleiben erhalten: Im Post steht ja, was zu
+# kommentieren ist, also tippen die Leute genau das. Wer lieber ASCII will
+# (etwa weil ein Kommentar-Werkzeug daran scheitert), setzt in der
+# config.yaml caption.keyword_umlaute auf false.
+UMLAUTE_ERHALTEN = True
+
+
 def _clean_keyword(text: str) -> str:
     text = text.strip().strip('"\'„“”‚‘’').strip()
     text = re.sub(r"[^0-9A-Za-zÄÖÜäöüß _-]", "", text).strip()
     if not text or len(text) > 30:
         return ""
-    return (text.upper().replace("Ä", "AE").replace("Ö", "OE")
-                .replace("Ü", "UE").replace("ß", "SS").replace(" ", ""))
+    # .upper() macht aus ß von sich aus SS - das ist korrektes Deutsch.
+    text = text.upper().replace(" ", "")
+    if not UMLAUTE_ERHALTEN:
+        text = (text.replace("Ä", "AE").replace("Ö", "OE")
+                    .replace("Ü", "UE"))
+    return text
 
 
 def _token() -> str:
@@ -261,7 +272,9 @@ def process(chat_id: int, jobs: list[tuple[str, str]], cfg) -> None:
 
 
 def main() -> int:
+    global UMLAUTE_ERHALTEN
     cfg = config_mod.load(os.environ.get("EVSLIDER_CONFIG", "config.yaml"))
+    UMLAUTE_ERHALTEN = bool(cfg.get("caption.keyword_umlaute", True))
     updates = call("getUpdates", timeout=0) or []
     if not updates:
         print("Keine neuen Nachrichten.")
