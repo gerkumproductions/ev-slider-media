@@ -14,7 +14,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 from . import icons as icon_mod
 from .fonts import FontSet
-from .scrape import Expose
+from .scrape import Expose, saubere_beschriftung
 
 UA = {"User-Agent": "Mozilla/5.0"}
 
@@ -170,6 +170,10 @@ class Renderer:
         d = ImageDraw.Draw(canvas)
         y = self.M
 
+        # Letzte Sicherung: eine Bedienbeschriftung darf hier nicht mehr
+        # ankommen, aber falls doch, wird sie nicht gezeichnet.
+        photo_caption = saubere_beschriftung(photo_caption)
+
         if photo is not None:
             pw = self.W - 2 * self.M
             ph = int(pw * 0.62)
@@ -216,6 +220,7 @@ class Renderer:
     # -- Slide 3+: Foto mit Bildtitel --
     def photo_slide(self, photo: Image.Image, caption: str) -> Image.Image:
         canvas = cover(photo, self.W, self.H).convert("RGBA")
+        caption = saubere_beschriftung(caption)
         if caption:
             canvas.alpha_composite(gradient(self.W, self.H, frac=0.30, end=0.55))
             d = ImageDraw.Draw(canvas)
@@ -237,10 +242,17 @@ class Renderer:
             raise RuntimeError("Keine Bilder gefunden.")
 
         def cap(i: int) -> str:
-            """Vorrang: Bildunterschrift der Website, dann erzeugter Titel."""
+            """Vorrang: Bildunterschrift der Website, dann erzeugter Titel.
+
+            Beides wird gefiltert: Beschriftungen von Bedienelementen wie
+            "go to next image" gehoeren nicht ins Bild. Bleibt nichts uebrig,
+            wird das Slide ohne Titel gezeichnet - ganz ohne Balken.
+            """
             if i < len(ex.photos):
                 p = ex.photos[i]
-                return p.caption or p.title or ""
+                return (saubere_beschriftung(p.caption)
+                        or saubere_beschriftung(p.title)
+                        or "")
             return ""
 
         slides = [self.title_slide(ex, images[0])]
