@@ -321,6 +321,7 @@ def fetch_gallery(url: str, headless: bool = True, max_clicks: int = 40,
             order: list[str] = []
 
             eigene = _eigene_uuids(page.content())
+            eigene_start = eigene
             print(f"[i] Bilder dieses Objekts laut Seitenaufbau: "
                   f"{len(eigene) if eigene is not None else 'Grenze nicht erkannt'}")
 
@@ -381,6 +382,11 @@ def fetch_gallery(url: str, headless: bool = True, max_clicks: int = 40,
             for _ in range(schritte):
                 uuid, alt, caption = _current_slide(page)
                 total = total or expected_total(page.inner_text("body"))
+                # Dieselbe Unterschrift zweimal heißt: die Zuordnung stimmt
+                # nicht. Dann lieber keine als eine falsche.
+                if caption and any(c == caption for _, _, c in galerie):
+                    caption = ""
+
                 if uuid and uuid not in gesehen:
                     gesehen.add(uuid)
                     galerie.append((uuid, alt, caption))
@@ -392,8 +398,25 @@ def fetch_gallery(url: str, headless: bool = True, max_clicks: int = 40,
                     leerlauf += 1
                 else:
                     leerlauf += 1
+
+                # Zusätzlich mitnehmen, was durch das Blättern neu geladen
+                # wurde - aber NUR wenn die Grenze zu fremden Objekten bekannt
+                # ist, und OHNE Unterschriften: die sind hier nicht sicher dem
+                # richtigen Bild zuzuordnen. Unterschriften kommen allein aus
+                # der Zähler-Zuordnung oben.
+                if eigene is not None:
+                    for u2, a2, _ in _harvest(page, eigene):
+                        if u2 not in gesehen:
+                            gesehen.add(u2)
+                            galerie.append((u2, a2, ""))
+                            leerlauf = 0
                 if total and len(galerie) >= total:
                     break
+                # nachgeladene eigene Bilder in die Grenze aufnehmen
+                if eigene_start is not None:
+                    neu = _eigene_uuids(page.content())
+                    if neu:
+                        eigene = eigene_start | neu
                 if leerlauf >= 6:      # sechsmal dasselbe Bild -> Ende
                     break
                 if not _weiterblaettern(page):
