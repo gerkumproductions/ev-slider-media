@@ -379,6 +379,20 @@ def fetch_gallery(url: str, headless: bool = True, max_clicks: int = 40,
                     print(f"[i] Ergänzt auf {len(galerie)} Bilder "
                           f"(nur eigene).")
 
+            # Wenn die Diaschau nicht vollstaendig war: Screenshot mitgeben,
+            # damit man sieht, was der Browser dort wirklich vor sich hat.
+            schnappschuss = ""
+            if not total or len(galerie) < total:
+                try:
+                    from pathlib import Path
+                    ziel = Path("out") / "galerie-diagnose.png"
+                    ziel.parent.mkdir(parents=True, exist_ok=True)
+                    page.screenshot(path=str(ziel), full_page=False)
+                    schnappschuss = str(ziel)
+                    print(f"[i] Screenshot der Galerie gespeichert: {ziel}")
+                except Exception as exc:                       # noqa: BLE001
+                    print(f"[i] Screenshot fehlgeschlagen: {exc}")
+
             if galerie and (not total or len(galerie) >= min(total, 3)):
                 mit = sum(1 for _, _, c in galerie if c)
                 print(f"[i] Aus der Vollbild-Ansicht: {len(galerie)} Bilder, "
@@ -387,7 +401,8 @@ def fetch_gallery(url: str, headless: bool = True, max_clicks: int = 40,
                     print("[i] Diagnose (Umfeld des Zählers):", _diagnose(page)[:400])
                 # Aus der Galerie: hier liegen nur Objektfotos, keine Werbung.
                 return {"html": page.content(), "photos": galerie,
-                        "expected": total, "aus_galerie": not ergaenzt}
+                        "expected": total, "aus_galerie": not ergaenzt,
+                        "diagnose_bild": schnappschuss}
 
             print("[i] Vollbild-Ansicht lieferte zu wenig - nutze die Seitenstruktur.")
             stale = 0
@@ -422,6 +437,7 @@ def fetch_gallery(url: str, headless: bool = True, max_clicks: int = 40,
             html = page.content()
             return {"html": html,
                     "photos": [(u, seen[u][0], seen[u][1]) for u in order],
-                    "expected": total, "aus_galerie": False}
+                    "expected": total, "aus_galerie": False,
+                    "diagnose_bild": schnappschuss}
         finally:
             browser.close()
