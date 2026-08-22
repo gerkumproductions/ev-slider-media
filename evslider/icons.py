@@ -99,7 +99,21 @@ def _euro(size: int, c) -> Image.Image:
     return img
 
 
+def _haken(size: int, c) -> Image.Image:
+    """Schlichter Haken - neutral und immer passend."""
+    img, d = _canvas(size)
+    s = size
+    d.line([(s * .18, s * .52), (s * .40, s * .74)], fill=c, width=STROKE + 2)
+    d.line([(s * .40, s * .74), (s * .84, s * .26)], fill=c, width=STROKE + 2)
+    # Ecken abrunden
+    for punkt in ((s * .18, s * .52), (s * .40, s * .74), (s * .84, s * .26)):
+        r = (STROKE + 2) / 2
+        d.ellipse([punkt[0] - r, punkt[1] - r, punkt[0] + r, punkt[1] + r], fill=c)
+    return img
+
+
 DRAWERS = {
+    "haken": _haken,
     "wohnflaeche": _flaeche,
     "grundstueck": _flaeche,
     "badezimmer": _bad,
