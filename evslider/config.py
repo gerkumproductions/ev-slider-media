@@ -30,6 +30,7 @@ DEFAULTS: dict[str, Any] = {
         "height": 1350,          # 4:5 – bester Feed-Platz auf Instagram
         "max_total": 10,         # Instagram-Maximum fuer Karussells
         "facts": ["Wohnfläche", "Badezimmer", "Baujahr", "Zimmer"],
+        "fact_icon": "haken",    # "haken" | "auto" (je Fakt ein eigenes Symbol)
     },
     "caption": {
         "model": "claude-sonnet-5",
