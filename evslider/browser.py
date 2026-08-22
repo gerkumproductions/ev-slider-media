@@ -136,6 +136,7 @@ _JS_CURRENT = r"""
   }
   return {
     src: best ? (best.currentSrc || best.src || '') : '',
+    alt: best ? (best.alt || '') : '',
     caption: caption,
     zaehler: zaehler ? zaehler.innerText.trim() : ''
   };
@@ -173,14 +174,16 @@ def _diagnose(page) -> str:
         return f"Diagnose fehlgeschlagen: {exc}"
 
 
-def _current_slide(page) -> tuple[str, str]:
-    """(uuid, Unterschrift) des gerade sichtbaren Bildes."""
+def _current_slide(page) -> tuple[str, str, str]:
+    """(uuid, alt-Text, Unterschrift) des gerade sichtbaren Bildes."""
     try:
         d = page.evaluate(_JS_CURRENT)
     except Exception:                                          # noqa: BLE001
-        return "", ""
+        return "", "", ""
     m = UPLOADCARE_RE.search(d.get("src") or "")
-    return (m.group(1) if m else ""), (d.get("caption") or "").strip()
+    return ((m.group(1) if m else ""),
+            (d.get("alt") or "").strip(),
+            (d.get("caption") or "").strip())
 
 
 def fetch_gallery(url: str, headless: bool = True, max_clicks: int = 40,
@@ -231,43 +234,74 @@ def fetch_gallery(url: str, headless: bool = True, max_clicks: int = 40,
 
             # Vollbild-Bilderansicht öffnen: erst über den Reiter "Bilder",
             # sonst durch Klick aufs erste Bild.
-            geoeffnet = False
+            # Reihenfolge ist entscheidend: Erst die Vollbild-Ansicht öffnen
+            # (Klick aufs Hauptbild), DANN erscheint der Reiter "Bilder (5)".
             try:
-                el = page.get_by_text(re.compile(r"^\s*Bilder\s*\(\d+\)\s*$")).first
-                if el.is_visible(timeout=1500):
-                    el.click(timeout=2500)
-                    geoeffnet = True
+                page.locator("img[src*='uploadcare']").first.click(timeout=3000)
+                page.wait_for_timeout(1800)
             except Exception:
                 pass
-            if not geoeffnet:
-                for sel in GALLERY_TAB_SELECTORS:
+
+            reiter = False
+            for versuch in (
+                lambda: page.get_by_text(re.compile(r"^\s*Bilder\s*\(\d+\)\s*$")).first,
+                lambda: page.get_by_role("tab", name=re.compile("Bilder")).first,
+                lambda: page.locator("button:has-text('Bilder'), a:has-text('Bilder')").first,
+            ):
+                try:
+                    el = versuch()
+                    if el.is_visible(timeout=1200):
+                        el.click(timeout=2500)
+                        reiter = True
+                        page.wait_for_timeout(1500)
+                        break
+                except Exception:
+                    continue
+            print(f"[i] Bilder-Reiter geöffnet: {reiter}")
+
+            total = expected_total(page.inner_text("body")) or total
+
+            # Durch die Vollbild-Ansicht blättern und dabei Bild + Unterschrift
+            # paarweise mitschreiben. Das ist die verlaessliche Quelle: hier
+            # tauchen nur Bilder auf, die wirklich zur Galerie gehoeren.
+            galerie: list[tuple[str, str, str]] = []
+            gesehen: set[str] = set()
+            schritte = (total or 12) + 2
+            for _ in range(schritte):
+                uuid, alt, caption = _current_slide(page)
+                total = total or expected_total(page.inner_text("body"))
+                if uuid and uuid not in gesehen:
+                    gesehen.add(uuid)
+                    galerie.append((uuid, alt, caption))
+                elif uuid:
+                    for i, (u, a, c) in enumerate(galerie):
+                        if u == uuid:
+                            galerie[i] = (u, a or alt, c or caption)
+                if total and len(galerie) >= total:
+                    break
+                weiter = False
+                for sel in NEXT_SELECTORS:
                     try:
-                        el = page.locator(sel).first
-                        if el.is_visible(timeout=800):
-                            el.click(timeout=2000)
-                            geoeffnet = True
+                        btn = page.locator(sel).last
+                        if btn.is_visible(timeout=400):
+                            btn.click(timeout=1500)
+                            weiter = True
                             break
                     except Exception:
                         continue
-            print(f"[i] Bilder-Reiter geöffnet: {geoeffnet}")
-            if not geoeffnet:
-                try:
-                    page.locator("img[src*='uploadcare']").first.click(timeout=2500)
-                except Exception:
-                    pass
-            page.wait_for_timeout(1800)
-            collect()
+                if not weiter:
+                    page.keyboard.press("ArrowRight")
+                page.wait_for_timeout(650)
 
-            def unterschrift_merken():
-                uuid, caption = _current_slide(page)
-                if uuid and caption:
-                    alt_alt, alt_cap = seen.get(uuid, ("", ""))
-                    if uuid not in seen:
-                        order.append(uuid)
-                    seen[uuid] = (alt_alt, caption)      # Website schlägt alt-Text
+            if galerie and (not total or len(galerie) >= min(total, 3)):
+                mit = sum(1 for _, _, c in galerie if c)
+                print(f"[i] Aus der Vollbild-Ansicht: {len(galerie)} Bilder, "
+                      f"{mit} mit Unterschrift.")
+                if not mit:
+                    print("[i] Diagnose (Umfeld des Zählers):", _diagnose(page)[:400])
+                return {"html": page.content(), "photos": galerie, "expected": total}
 
-            unterschrift_merken()
-
+            print("[i] Vollbild-Ansicht lieferte zu wenig - nutze die Seitenstruktur.")
             stale = 0
             for _ in range(max_clicks):
                 if total and len(order) >= total:
@@ -287,7 +321,6 @@ def fetch_gallery(url: str, headless: bool = True, max_clicks: int = 40,
                     page.keyboard.press("ArrowRight")
                 page.wait_for_timeout(700)
                 collect()
-                unterschrift_merken()
                 stale = stale + 1 if len(order) == before else 0
                 if stale >= 4:
                     break
