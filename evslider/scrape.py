@@ -68,6 +68,7 @@ class Expose:
     expected_images: int | None = None   # laut Galerie-Zähler auf der Seite
     source: str = "http"                 # http | browser
     aus_galerie: bool = False            # Bilder stammen aus der Vollbild-Galerie
+    diagnose_bild: str = ""              # Screenshot, falls die Galerie klemmte
 
     def facts(self, wanted: list[str] | None = None) -> list[tuple[str, str]]:
         """Fakten fürs zweite Slide – nur was wirklich gefüllt ist."""
@@ -306,6 +307,7 @@ def scrape(url: str, browser: str = "auto") -> Expose:
     full.expected_images = res.get("expected") or ex.expected_images
     full.source = "browser"
     full.aus_galerie = bool(res.get("aus_galerie"))
+    full.diagnose_bild = res.get("diagnose_bild") or ""
 
     # Notbremse: Nie mehr Bilder als der Zähler der Seite angibt. Alles
     # darüber hinaus kann nur von einem fremden Objekt stammen.
