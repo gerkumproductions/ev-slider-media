@@ -196,7 +196,11 @@ class Renderer:
             cx = col_w * (i % 2) + col_w // 2
             cy = grid_top + cell_h * (i // 2)
 
-            ic = icon_mod.icon(fact_key(label), icon_px, self.dark, self.cfg)
+            # slides.fact_icon: "haken" = überall derselbe Haken,
+            # "auto" = je Fakt ein eigenes Symbol
+            gewaehlt = self.cfg.get("slides.fact_icon", "haken")
+            schluessel = fact_key(label) if gewaehlt == "auto" else gewaehlt
+            ic = icon_mod.icon(schluessel, icon_px, self.dark, self.cfg)
             if ic is not None:
                 canvas.paste(ic, (cx - ic.width // 2, cy), ic)
 
