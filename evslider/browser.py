@@ -15,6 +15,12 @@ UPLOADCARE_RE = re.compile(
 )
 COUNTER_RE = re.compile(r"\b(\d{1,2})\s*/\s*(\d{1,3})\b")
 
+# Ab hier zeigt die Seite fremde Objekte. Alles danach ist tabu.
+FREMD_MARKER = (
+    "Objekte in der Nähe", "Ähnliche Objekte", "Das könnte Sie auch",
+    "Weitere Immobilien", "Ähnliche Immobilien", "Weitere Objekte",
+)
+
 UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/126.0 Safari/537.36")
 
@@ -95,7 +101,20 @@ els => {
 """
 
 
-def _harvest(page) -> list[tuple[str, str, str]]:
+def _eigene_uuids(html: str) -> set[str] | None:
+    """UUIDs, die VOR dem Bereich fremder Objekte stehen.
+
+    Ohne diese Grenze landen Fotos von Nachbarobjekten im Slider - das darf
+    nie passieren. None = kein Marker gefunden, dann gilt keine Einschränkung.
+    """
+    schnitt = min((html.find(m) for m in FREMD_MARKER if html.find(m) > 0),
+                  default=-1)
+    if schnitt <= 0:
+        return None
+    return set(UPLOADCARE_RE.findall(html[:schnitt]))
+
+
+def _harvest(page, erlaubt: set[str] | None = None) -> list[tuple[str, str, str]]:
     """(uuid, alt, bildunterschrift) aller Uploadcare-Bilder im aktuellen DOM."""
     raw = page.eval_on_selector_all("img, source", _JS_HARVEST)
     out: list[tuple[str, str, str]] = []
@@ -103,6 +122,8 @@ def _harvest(page) -> list[tuple[str, str, str]]:
         m = UPLOADCARE_RE.search(item.get("src") or "")
         if not m:
             continue
+        if erlaubt is not None and m.group(1) not in erlaubt:
+            continue                      # gehört zu einem fremden Objekt
         alt = (item.get("alt") or "").strip()
         if any(x in alt.lower() for x in EXCLUDE_ALT):
             continue
@@ -264,8 +285,12 @@ def fetch_gallery(url: str, headless: bool = True, max_clicks: int = 40,
             seen: dict[str, tuple[str, str]] = {}     # uuid -> (alt, caption)
             order: list[str] = []
 
+            eigene = _eigene_uuids(page.content())
+            print(f"[i] Bilder dieses Objekts laut Seitenaufbau: "
+                  f"{len(eigene) if eigene is not None else 'Grenze nicht erkannt'}")
+
             def collect():
-                for uuid, alt, caption in _harvest(page):
+                for uuid, alt, caption in _harvest(page, eigene):
                     alt_alt, alt_cap = seen.get(uuid, ("", ""))
                     if uuid not in seen:
                         order.append(uuid)
@@ -338,16 +363,21 @@ def fetch_gallery(url: str, headless: bool = True, max_clicks: int = 40,
             # Dann ist die Quelle nicht mehr rein - Werbefilter bleibt aktiv.
             ergaenzt = False
             if total and len(galerie) < total:
-                ergaenzt = True
-                print(f"[i] Diaschau brachte nur {len(galerie)} von {total} - "
-                      f"ergänze aus der Seitenstruktur.")
-                collect()
-                for uuid in order:
-                    if uuid not in gesehen and len(galerie) < total:
-                        gesehen.add(uuid)
-                        a, c = seen.get(uuid, ("", ""))
-                        galerie.append((uuid, a, c))
-                print(f"[i] Aus der Seitenstruktur ergänzt auf {len(galerie)} Bilder.")
+                if eigene is None:
+                    print("[i] Diaschau unvollständig, aber die Grenze zu fremden "
+                          "Objekten ist unklar - es wird NICHT ergänzt.")
+                else:
+                    ergaenzt = True
+                    print(f"[i] Diaschau brachte nur {len(galerie)} von {total} - "
+                          f"ergänze aus dem Bereich dieses Objekts.")
+                    collect()
+                    for uuid in order:
+                        if uuid not in gesehen and len(galerie) < total:
+                            gesehen.add(uuid)
+                            a, c = seen.get(uuid, ("", ""))
+                            galerie.append((uuid, a, c))
+                    print(f"[i] Ergänzt auf {len(galerie)} Bilder "
+                          f"(nur eigene).")
 
             if galerie and (not total or len(galerie) >= min(total, 3)):
                 mit = sum(1 for _, _, c in galerie if c)
