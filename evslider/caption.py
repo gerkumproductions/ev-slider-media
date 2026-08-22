@@ -86,7 +86,8 @@ def generate(ex, cfg, keyword: str | None = None) -> dict:
     if not key:
         # Ohne API-Key: alt-Texte als Bildtitel, simpler Fallback-Text
         for p in ex.photos:
-            p.title = p.alt[:60]
+            if not p.caption:
+                p.title = p.alt[:60]
         return {"hook": ex.title, "body": ex.description,
                 "keyword": keyword or _fallback_keyword(ex),
                 "hashtags": cfg.get("caption.hashtags", [])}
@@ -103,6 +104,7 @@ def generate(ex, cfg, keyword: str | None = None) -> dict:
         "lage": ex.location_text[:1500],
         "shop": cfg.get("brand.shop_name"),
         "bild_alt_texte": [p.alt for p in ex.photos],
+        "bildunterschriften_der_website": [p.caption for p in ex.photos],
     }
     if keyword:
         payload["vorgegebenes_cta_stichwort"] = keyword
@@ -121,9 +123,12 @@ def generate(ex, cfg, keyword: str | None = None) -> dict:
 
     titles = out.get("image_titles", [])
     for p, t in zip(ex.photos, titles):
-        p.title = str(t).strip()
+        # Die Unterschrift von der Website hat immer Vorrang - der KI-Titel
+        # ist nur die Notloesung, wenn die Seite nichts hergibt.
+        if not p.caption:
+            p.title = str(t).strip()
     for p in ex.photos:
-        if not p.title:
+        if not (p.caption or p.title):
             p.title = p.alt[:60]
 
     # Werbebilder aussortieren - erst KI-Einschaetzung, dann Stichwortpruefung
