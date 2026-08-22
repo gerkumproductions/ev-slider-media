@@ -74,12 +74,16 @@ def _upload_github(paths: list[Path], cfg) -> list[str]:
     import os
 
     token = os.environ.get("GITHUB_TOKEN")
-    owner = cfg.get("hosting.github_owner")
-    repo = cfg.get("hosting.github_repo")
-    # In GitHub Actions steht das Repo in der Umgebung - dann muss es nicht
-    # zusätzlich in die config.yaml eingetragen werden.
-    if not (owner and repo) and os.environ.get("GITHUB_REPOSITORY"):
-        owner, _, repo = os.environ["GITHUB_REPOSITORY"].partition("/")
+
+    # Läuft das Tool in GitHub Actions, gewinnt IMMER das Repo aus der Umgebung.
+    # Ein alter oder falscher Eintrag in der config.yaml kann so nicht mehr
+    # dazwischenfunken.
+    env_repo = os.environ.get("GITHUB_REPOSITORY")
+    if env_repo and "/" in env_repo:
+        owner, _, repo = env_repo.partition("/")
+    else:
+        owner = cfg.get("hosting.github_owner")
+        repo = cfg.get("hosting.github_repo")
     branch = cfg.get("hosting.github_branch", "main")
     prefix = cfg.get("hosting.prefix", "")
     if not (token and owner and repo):
@@ -88,6 +92,7 @@ def _upload_github(paths: list[Path], cfg) -> list[str]:
             "und hosting.github_repo in der config.yaml eintragen."
         )
 
+    print(f"[i] Bild-Upload nach {owner}/{repo} (Branch {branch})")
     headers = {"Authorization": f"Bearer {token}",
                "Accept": "application/vnd.github+json",
                "X-GitHub-Api-Version": "2022-11-28"}
@@ -104,8 +109,15 @@ def _upload_github(paths: list[Path], cfg) -> list[str]:
             body["sha"] = prev.json().get("sha")
         r = requests.put(api, json=body, headers=headers, timeout=120)
         if r.status_code >= 400:
-            raise RuntimeError(f"GitHub-Upload fehlgeschlagen ({r.status_code}): "
-                               f"{r.text[:300]}")
+            hinweis = ""
+            if r.status_code == 404:
+                hinweis = (f" – Repo {owner}/{repo} nicht gefunden oder der Token "
+                           f"hat kein Schreibrecht darauf.")
+            elif r.status_code == 403:
+                hinweis = (" – kein Schreibrecht. In der slider.yml muss "
+                           "'permissions: contents: write' stehen.")
+            raise RuntimeError(f"GitHub-Upload fehlgeschlagen ({r.status_code})"
+                               f"{hinweis}: {r.text[:200]}")
         urls.append(f"https://raw.githubusercontent.com/{owner}/{repo}/{branch}/{key}")
     return urls
 
