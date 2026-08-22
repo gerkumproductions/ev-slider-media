@@ -101,6 +101,23 @@ els => {
 """
 
 
+def _eigene_reihenfolge(html: str) -> list[str]:
+    """UUIDs des eigenen Objekts in der Reihenfolge des Quelltextes.
+
+    Die Galeriebilder stehen dort oben, Werbung und Shop-Logo weiter unten.
+    Deshalb reicht es, die ersten N zu nehmen - ganz ohne Blättern.
+    """
+    schnitt = min((html.find(m) for m in FREMD_MARKER if html.find(m) > 0),
+                  default=-1)
+    bereich = html[:schnitt] if schnitt > 0 else html
+    gesehen, out = set(), []
+    for uuid in UPLOADCARE_RE.findall(bereich):
+        if uuid not in gesehen:
+            gesehen.add(uuid)
+            out.append(uuid)
+    return out
+
+
 def _eigene_uuids(html: str) -> set[str] | None:
     """UUIDs, die VOR dem Bereich fremder Objekte stehen.
 
@@ -424,6 +441,20 @@ def fetch_gallery(url: str, headless: bool = True, max_clicks: int = 40,
 
             # Fehlt etwas gegenueber dem Zaehler, aus dem DOM nachfuellen.
             # Dann ist die Quelle nicht mehr rein - Werbefilter bleibt aktiv.
+            # Auffüllen aus dem Quelltext: die ersten N eigenen Bilder.
+            soll = total or 5
+            if len(galerie) < soll:
+                html_jetzt = page.content()
+                for uuid in _eigene_reihenfolge(html_jetzt):
+                    if len(galerie) >= soll:
+                        break
+                    if uuid in gesehen:
+                        continue
+                    gesehen.add(uuid)
+                    galerie.append((uuid, "", ""))
+                print(f"[i] Aus dem Quelltext auf {len(galerie)} Bilder aufgefüllt "
+                      f"(Soll: {soll}).")
+
             ergaenzt = False
             if total and len(galerie) < total:
                 if eigene is None:
