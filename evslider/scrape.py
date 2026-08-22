@@ -67,6 +67,7 @@ class Expose:
     photos: list[Photo] = field(default_factory=list)
     expected_images: int | None = None   # laut Galerie-Zähler auf der Seite
     source: str = "http"                 # http | browser
+    aus_galerie: bool = False            # Bilder stammen aus der Vollbild-Galerie
 
     def facts(self, wanted: list[str] | None = None) -> list[tuple[str, str]]:
         """Fakten fürs zweite Slide – nur was wirklich gefüllt ist."""
@@ -304,6 +305,7 @@ def scrape(url: str, browser: str = "auto") -> Expose:
                    for u, a, c in res["photos"]] or ex.photos
     full.expected_images = res.get("expected") or ex.expected_images
     full.source = "browser"
+    full.aus_galerie = bool(res.get("aus_galerie"))
 
     if full.expected_images and len(full.photos) < full.expected_images:
         print(f"[!] Nur {len(full.photos)} von {full.expected_images} Bildern gefunden.")
