@@ -112,7 +112,14 @@ class Expose:
     diagnose_bild: str = ""              # Screenshot, falls die Galerie klemmte
 
     def facts(self, wanted: list[str] | None = None) -> list[tuple[str, str]]:
-        """Fakten fürs zweite Slide – nur was wirklich gefüllt ist."""
+        """Fakten fürs zweite Slide – nur was wirklich gefüllt ist.
+
+        In der Liste darf ein Eintrag Alternativen enthalten, getrennt durch
+        einen senkrechten Strich: "Grundstück|Baujahr" nimmt die
+        Grundstücksfläche, wenn es eine gibt, sonst das Baujahr. So steht bei
+        Häusern die Fläche und bei Wohnungen das Baujahr, ohne zwei
+        Konfigurationen pflegen zu müssen.
+        """
         available = {
             "Kaufpreis": self.price,
             "Wohnfläche": self.living_area,
@@ -123,12 +130,26 @@ class Expose:
             "Energieklasse": self.energy_class,
             "Objektart": self.property_type,
         }
-        order = wanted or ["Wohnfläche", "Badezimmer", "Baujahr", "Zimmer"]
-        out = [(k, available.get(k, "")) for k in order if available.get(k)]
+        order = wanted or ["Wohnfläche", "Badezimmer", "Grundstück|Baujahr", "Zimmer"]
+
+        out: list[tuple[str, str]] = []
+        vergeben: set[str] = set()
+        for eintrag in order:
+            if isinstance(eintrag, (list, tuple)):
+                kandidaten = [str(k).strip() for k in eintrag]
+            else:
+                kandidaten = [k.strip() for k in str(eintrag).split("|")]
+            for k in kandidaten:
+                if available.get(k) and k not in vergeben:
+                    out.append((k, available[k]))
+                    vergeben.add(k)
+                    break
+
         if len(out) < 4:  # auffüllen, falls ein Wert fehlt
             for k, v in available.items():
-                if v and k not in dict(out) and len(out) < 4:
+                if v and k not in vergeben and len(out) < 4:
                     out.append((k, v))
+                    vergeben.add(k)
         return out
 
     def to_dict(self) -> dict[str, Any]:
