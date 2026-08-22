@@ -15,8 +15,8 @@ DEFAULTS: dict[str, Any] = {
         "dark": "#1A1A1A",
         "light": "#FFFFFF",
         "muted": "#8C8C8C",
-        "shop_name": "Engel & Völkers Bochum",
-        "handle": "@engelvoelkers.bochum",
+        "shop_name": "Engel & Völkers im Rheinland",
+        "handle": "@engelvoelkers.rheinland",
     },
     "fonts": {
         "head_regular": "assets/fonts/EngelVoelkersHead_Rg.ttf",
@@ -28,14 +28,14 @@ DEFAULTS: dict[str, Any] = {
     "slides": {
         "width": 1080,
         "height": 1350,          # 4:5 – bester Feed-Platz auf Instagram
-        "max_total": 10,         # Instagram-Limit für Karussells
+        "max_total": 10,         # Instagram-Maximum fuer Karussells
         "facts": ["Wohnfläche", "Badezimmer", "Baujahr", "Zimmer"],
     },
     "caption": {
         "model": "claude-sonnet-5",
         "hashtags": ["#engelvoelkers", "#immobilien", "#zuhause"],
         "max_chars": 1400,
-        "cta_template": 'Kommentiere "{keyword}" und du bekommst das komplette Exposé per DM.',
+        "cta_template": 'Kommentieren Sie "{keyword}" und Sie erhalten das komplette Exposé per DM.',
     },
     "schedule": {
         "days": ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday"],
@@ -59,6 +59,18 @@ DEFAULTS: dict[str, Any] = {
         "public_base_url": "",   # z.B. https://cdn.deine-domain.de
         "prefix": "ev-slider/",
     },
+    # Mehrere Shops: Werte hier überschreiben nur das, was abweicht.
+    # Der Schlüssel ("rheinland") wird in telegram.chat_map einem Chat zugeordnet.
+    "shops": {
+        "rheinland": {
+            "brand": {"shop_name": "Engel & Völkers im Rheinland",
+                      "handle": "@engelvoelkers.rheinland"},
+            "metricool": {"blog_id": ""},      # leer = METRICOOL_BLOG_ID aus der Umgebung
+        },
+    },
+    "default_shop": "rheinland",
+    # Telegram-Chat -> Shop. Chat-IDs sind keine Geheimnisse, sie dürfen hier stehen.
+    "telegram": {"chat_map": {}},
     "scrape": {"browser": "auto"},
     "output_dir": "out",
 }
@@ -126,7 +138,29 @@ class Config:
 
     @property
     def metricool_blog_id(self) -> str | None:
-        return os.environ.get("METRICOOL_BLOG_ID")
+        return self.get("metricool.blog_id") or os.environ.get("METRICOOL_BLOG_ID")
+
+    # --- Mehrere Shops ---
+    def shop_keys(self) -> list[str]:
+        return list((self.get("shops") or {}).keys())
+
+    def shop_for_chat(self, chat_id) -> str | None:
+        """Welcher Shop gehört zu diesem Telegram-Chat?
+
+        Steht keine Zuordnung in der Konfiguration, gilt der Standard-Shop -
+        so bleibt ein Einzelshop-Setup ohne jede Änderung lauffähig.
+        """
+        mapping = {str(k): v for k, v in (self.get("telegram.chat_map") or {}).items()}
+        if str(chat_id) in mapping:
+            return mapping[str(chat_id)]
+        if mapping:                      # Zuordnung gepflegt, Chat unbekannt
+            return None
+        return self.get("default_shop")
+
+    def for_shop(self, key: str | None) -> "Config":
+        """Konfiguration mit den Abweichungen dieses Shops."""
+        over = (self.get("shops") or {}).get(key or "", {})
+        return Config(data=_merge(self.data, over), root=self.root)
 
 
 def load(path: str | Path = "config.yaml") -> Config:
