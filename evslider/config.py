@@ -47,7 +47,7 @@ DEFAULTS: dict[str, Any] = {
     "metricool": {
         "base_url": "https://app.metricool.com/api",
         "auto_publish": True,
-        "networks": ["instagram"],
+        "networks": ["instagram", "facebook", "linkedin"],
         "normalize_media": True,
     },
     "hosting": {
