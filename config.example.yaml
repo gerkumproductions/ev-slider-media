@@ -63,10 +63,20 @@ schedule:
   timezone: "Europe/Berlin"
   min_lead_hours: 12          # kein Post innerhalb der nächsten 12 h
 
+  # --- Belegte Termine ueberspringen (evslider/belegung.py) ---
+  # Vor dem Einplanen wird bei Metricool nachgefragt, was im Kalender dieses
+  # Shops schon steht. Ist der Wunschtermin belegt, rutscht der Post auf den
+  # naechsten erlaubten Tag zur selben Uhrzeit.
+  slot_check: true            # false = Pruefung aus, alter Stand
+  slot_toleranz_min: 60       # ein vorhandener Post ±60 Min gilt als Kollision
+  tag_komplett: true          # true = nur ein Objektpost pro Tag, egal wann
+                              # false = nur die Uhrzeit selbst zaehlt
+
 metricool:
   auto_publish: true
   networks: ["instagram", "facebook", "linkedin"]
   normalize_media: true   # Bilder vor dem Einplanen auf Metricools Server kopieren
+  base_url: "https://app.metricool.com/api"
 
 hosting:
   # github = kostenlos, keine Kreditkarte, kein Server noetig
