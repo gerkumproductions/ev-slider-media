@@ -15,6 +15,10 @@ UPLOADCARE_RE = re.compile(
 )
 COUNTER_RE = re.compile(r"\b(\d{1,2})\s*/\s*(\d{1,3})\b")
 
+# Auffuellen aus dem Quelltext ist verboten: dabei geraten Logos und
+# Platzhalter in den Slider. Es zaehlt nur, was aus der Galerie kommt.
+AUFFUELLEN = False
+
 # Ab hier zeigt die Seite fremde Objekte. Alles danach ist tabu.
 FREMD_MARKER = (
     "Objekte in der Nähe", "Ähnliche Objekte", "Das könnte Sie auch",
@@ -67,6 +71,17 @@ def expected_total(page_text: str) -> int | None:
         if 1 <= c <= t <= 60:            # plausibler Galerie-Zähler
             best = max(best or 0, t)
     return best
+
+
+def _position(zaehler: str) -> tuple[int, int]:
+    """'3/5' -> (3, 5). Ohne erkennbaren Zähler (0, 0)."""
+    m = re.match(r"\s*(\d{1,2})\s*/\s*(\d{1,3})", zaehler or "")
+    if not m:
+        return 0, 0
+    pos, ges = int(m.group(1)), int(m.group(2))
+    if 1 <= pos <= ges <= 60:
+        return pos, ges
+    return 0, 0
 
 
 # Sucht zu jedem Bild die sichtbare deutsche Bildunterschrift ("offene Küche").
@@ -158,9 +173,17 @@ def _harvest(page, erlaubt: set[str] | None = None) -> list[tuple[str, str, str]
     return out
 
 
-# Liest, was gerade im Vollbild zu sehen ist: grösstes Bild + Unterschrift.
-# Die Unterschrift steht im selben Bereich wie der Zähler - darüber finden
-# wir sie zuverlässiger als über die Position im Seitenaufbau.
+# Liest, was gerade im Vollbild zu sehen ist.
+#
+# Frueher wurde schlicht das flaechenmaessig groesste Bild der ganzen Seite
+# genommen. Solange das Galeriefoto noch laedt, ist das aber irgendein
+# anderes Bild - ein Logo, ein Hintergrund, ein Nachbarslide. Genau so kam
+# das weisse E&V-Logo in den Slider.
+#
+# Jetzt gilt: nur Bilder INNERHALB des Vollbild-Overlays, nur echte
+# Uploadcare-Galeriebilder, nur solche, die waagerecht mittig stehen (das ist
+# der aktive Slide - die Nachbarn liegen links und rechts daneben). Was
+# verworfen wurde, kommt mit zurueck und landet im Protokoll.
 _JS_CURRENT = r"""
 () => {
   const kurz = t => t && t.trim().length > 0 && t.trim().length < 70;
@@ -181,17 +204,53 @@ _JS_CURRENT = r"""
     }
   }
 
-  let best = null, area = 0;
-  for (const img of document.querySelectorAll('img')) {
-    const r = img.getBoundingClientRect();
-    const a = Math.max(0, r.width) * Math.max(0, r.height);
-    if (r.bottom > 0 && r.top < window.innerHeight && a > area) { area = a; best = img; }
+  // Wurzel: das Vollbild-Overlay. Nur darin darf gesucht werden, sonst
+  // gewinnt ein grosses Bild von der Seite dahinter.
+  let wurzel = document.querySelector('[role="dialog"],[aria-modal="true"]');
+  if (!wurzel && zaehler) {
+    let p = zaehler.parentElement;
+    for (let i = 0; i < 6 && p; i++, p = p.parentElement) {
+      if (p.querySelector('img')) { wurzel = p; break; }
+    }
   }
+  if (!wurzel) wurzel = document.body;
+
+  const W = window.innerWidth, H = window.innerHeight, M = W / 2;
+  const istGalerie = s =>
+    /uploadcare\.engelvoelkers\.com\/[0-9a-f]{8}-[0-9a-f]{4}-/.test(s || '');
+
+  const suche = root => {
+    let best = null, area = 0;
+    const verworfen = [];
+    for (const img of root.querySelectorAll('img')) {
+      const r = img.getBoundingClientRect();
+      const src = img.currentSrc || img.src || '';
+      const a = Math.round(Math.max(0, r.width) * Math.max(0, r.height));
+      const cx = r.left + r.width / 2;
+      let grund = '';
+      if (!istGalerie(src)) grund = 'kein Galeriebild';
+      else if (r.width < 200 || r.height < 150) grund = 'zu klein';
+      else if (r.bottom <= 0 || r.top >= H) grund = 'ausserhalb';
+      else if (Math.abs(cx - M) > W * 0.25) grund = 'nicht mittig';
+      if (grund) {
+        if (a > 20000) verworfen.push(grund + ' (' + a + 'px) ' + src.slice(-40));
+        continue;
+      }
+      if (a > area) { area = a; best = img; }
+    }
+    return { best: best, verworfen: verworfen };
+  };
+
+  let res = suche(wurzel);
+  if (!res.best && wurzel !== document.body) res = suche(document.body);
+
+  const b = res.best;
   return {
-    src: best ? (best.currentSrc || best.src || '') : '',
-    alt: best ? (best.alt || '') : '',
+    src: b ? (b.currentSrc || b.src || '') : '',
+    alt: b ? (b.alt || '') : '',
     caption: caption,
-    zaehler: zaehler ? zaehler.innerText.trim() : ''
+    zaehler: zaehler ? zaehler.innerText.trim() : '',
+    verworfen: res.verworfen.slice(0, 4)
   };
 }
 """
@@ -299,23 +358,25 @@ def _weiterblaettern(page) -> bool:
 _weiterblaettern.zuletzt = ""
 
 
-def _current_slide(page) -> tuple[str, str, str]:
-    """(uuid, alt-Text, Unterschrift) des gerade sichtbaren Bildes."""
+def _current_slide(page) -> tuple[str, str, str, str, list]:
+    """(uuid, alt-Text, Unterschrift, Zählerstand, verworfene Kandidaten)."""
     try:
         d = page.evaluate(_JS_CURRENT)
     except Exception:                                          # noqa: BLE001
-        return "", "", ""
+        return "", "", "", "", []
     m = UPLOADCARE_RE.search(d.get("src") or "")
     return ((m.group(1) if m else ""),
             (d.get("alt") or "").strip(),
-            (d.get("caption") or "").strip())
+            (d.get("caption") or "").strip(),
+            (d.get("zaehler") or "").strip(),
+            list(d.get("verworfen") or []))
 
 
 def fetch_gallery(url: str, headless: bool = True, max_clicks: int = 40,
                   timeout: int = 45000) -> dict:
     """Öffnet die Seite, blättert durch die Galerie und sammelt alle Bilder.
 
-    Rückgabe: {"html", "photos": [(uuid, alt)], "expected": int|None}
+    Rückgabe: {"html", "photos": [(uuid, alt, caption)], "expected": int|None}
     """
     from playwright.sync_api import sync_playwright   # lokaler Import: optional
 
@@ -351,6 +412,8 @@ def fetch_gallery(url: str, headless: bool = True, max_clicks: int = 40,
             eigene_start = eigene
             print(f"[i] Bilder dieses Objekts laut Seitenaufbau: "
                   f"{len(eigene) if eigene is not None else 'Grenze nicht erkannt'}")
+            print(f"[i] Auffüllen aus dem Quelltext: "
+                  f"{'AN' if AUFFUELLEN else 'AUS'}")
 
             def collect():
                 for uuid, alt, caption in _harvest(page, eigene):
@@ -362,10 +425,9 @@ def fetch_gallery(url: str, headless: bool = True, max_clicks: int = 40,
 
             collect()
 
-            # Vollbild-Bilderansicht öffnen: erst über den Reiter "Bilder",
-            # sonst durch Klick aufs erste Bild.
-            # Reihenfolge ist entscheidend: Erst die Vollbild-Ansicht öffnen
-            # (Klick aufs Hauptbild), DANN erscheint der Reiter "Bilder (5)".
+            # Vollbild-Bilderansicht öffnen: Reihenfolge ist entscheidend.
+            # Erst die Vollbild-Ansicht öffnen (Klick aufs Hauptbild), DANN
+            # erscheint der Reiter "Bilder (5)".
             try:
                 page.locator("img[src*='uploadcare']").first.click(timeout=3000)
                 page.wait_for_timeout(1800)
@@ -397,70 +459,89 @@ def fetch_gallery(url: str, headless: bool = True, max_clicks: int = 40,
             except Exception:
                 pass
 
-            # Durch die Vollbild-Ansicht blättern und dabei Bild + Unterschrift
-            # paarweise mitschreiben. Das ist die verlaessliche Quelle: hier
-            # tauchen nur Bilder auf, die wirklich zur Galerie gehoeren.
-            galerie: list[tuple[str, str, str]] = []
+            # Durch die Vollbild-Ansicht blättern. Jedes Bild wird unter der
+            # Nummer abgelegt, die der Zähler in diesem Moment anzeigt. So
+            # kann kein fremdes Bild eine Position besetzen, die eigentlich
+            # einem Foto gehoert - und im Protokoll steht, welche Position
+            # gegebenenfalls leer geblieben ist.
+            plaetze: dict[int, tuple[str, str, str]] = {}
             gesehen: set[str] = set()
-            # Grosszuegig blaettern: lieber ein paar Klicks zu viel als ein
-            # halber Slider. Abbruch erst, wenn mehrfach nichts Neues kommt.
             schritte = max((total or 0) * 2, 24)
             leerlauf = 0
+            naechster_frei = 1
+
             for _ in range(schritte):
                 # Grosse Fotos brauchen einen Moment. Mehrfach nachsehen,
-                # bis ein neues Bild wirklich geladen ist.
-                uuid, alt, caption = _current_slide(page)
+                # bis das Bild dieser Position wirklich geladen ist.
+                uuid, alt, caption, zaehler, verworfen = _current_slide(page)
                 for _versuch in range(6):
                     if uuid and uuid not in gesehen:
                         break
                     page.wait_for_timeout(700)
-                    uuid, alt, caption = _current_slide(page)
-                total = total or expected_total(page.inner_text("body"))
-                # Dieselbe Unterschrift zweimal heißt: die Zuordnung stimmt
-                # nicht. Dann lieber keine als eine falsche.
-                if caption and any(c == caption for _, _, c in galerie):
-                    caption = ""
+                    uuid, alt, caption, zaehler, verworfen = _current_slide(page)
 
-                if uuid and uuid not in gesehen:
+                pos, z_total = _position(zaehler)
+                total = total or z_total or expected_total(page.inner_text("body"))
+                if not pos:                      # kein Zähler sichtbar
+                    pos = naechster_frei
+                naechster_frei = max(naechster_frei, pos + 1)
+
+                if uuid and pos not in plaetze:
+                    plaetze[pos] = (uuid, alt, caption)
                     gesehen.add(uuid)
-                    galerie.append((uuid, alt, caption))
                     leerlauf = 0
-                elif uuid:
-                    for i, (u, a, c) in enumerate(galerie):
-                        if u == uuid:
-                            galerie[i] = (u, a or alt, c or caption)
+                    print(f"[i] Position {pos}/{z_total or total or '?'}: "
+                          f"{uuid[:8]} | {caption or 'ohne Unterschrift'}")
+                    if verworfen:
+                        print(f"[i]    verworfen: {' ; '.join(verworfen)}")
+                elif uuid and plaetze.get(pos, ("",))[0] == uuid:
+                    _, a, c = plaetze[pos]
+                    plaetze[pos] = (uuid, a or alt, c or caption)
                     leerlauf += 1
                 else:
                     leerlauf += 1
+                    if uuid and pos in plaetze:
+                        print(f"[i] Position {pos} ist schon belegt "
+                              f"({plaetze[pos][0][:8]}) - {uuid[:8]} verworfen.")
+                    elif not uuid:
+                        print(f"[i] Position {pos}: kein Galeriebild gefunden."
+                              f"{' Verworfen: ' + ' ; '.join(verworfen) if verworfen else ''}")
 
-                # Zusätzlich mitnehmen, was durch das Blättern neu geladen
-                # wurde - aber NUR wenn die Grenze zu fremden Objekten bekannt
-                # ist, und OHNE Unterschriften: die sind hier nicht sicher dem
-                # richtigen Bild zuzuordnen. Unterschriften kommen allein aus
-                # der Zähler-Zuordnung oben.
-                if eigene is not None:
-                    for u2, a2, _ in _harvest(page, eigene):
+                # Nachgeladenes aus der Seitenstruktur mitnehmen - nur wenn
+                # Auffuellen ausdruecklich erlaubt ist. Sonst rutschen hier
+                # Logos und Nachbarobjekte herein.
+                if AUFFUELLEN and eigene is not None:
+                    for u2, a2, _c2 in _harvest(page, eigene):
                         if u2 not in gesehen:
                             gesehen.add(u2)
-                            galerie.append((u2, a2, ""))
+                            plaetze[naechster_frei] = (u2, a2, "")
+                            naechster_frei += 1
                             leerlauf = 0
-                if total and len(galerie) >= total:
+
+                if total and len(plaetze) >= total:
                     break
                 # nachgeladene eigene Bilder in die Grenze aufnehmen
                 if eigene_start is not None:
                     neu = _eigene_uuids(page.content())
                     if neu:
                         eigene = eigene_start | neu
-                if leerlauf >= 6:      # sechsmal dasselbe Bild -> Ende
+                if leerlauf >= 6:      # mehrfach nichts Neues -> Ende
                     break
                 if not _weiterblaettern(page):
                     leerlauf += 2
 
-            # Fehlt etwas gegenueber dem Zaehler, aus dem DOM nachfuellen.
-            # Dann ist die Quelle nicht mehr rein - Werbefilter bleibt aktiv.
-            # Auffüllen aus dem Quelltext: die ersten N eigenen Bilder.
+            galerie = [plaetze[p] for p in sorted(plaetze)]
+            if total:
+                fehlt = [p for p in range(1, total + 1) if p not in plaetze]
+                if fehlt:
+                    print(f"[i] Ohne Bild geblieben: Position(en) "
+                          f"{', '.join(str(p) for p in fehlt)}.")
+
+            # Fehlt etwas gegenueber dem Zaehler: NICHT aus dem Quelltext
+            # auffuellen, solange AUFFUELLEN aus ist. Lieber ein Bild weniger
+            # als ein Logo im Slider.
             soll = total or 5
-            if len(galerie) < soll:
+            if AUFFUELLEN and len(galerie) < soll:
                 html_jetzt = page.content()
                 for uuid in _eigene_reihenfolge(html_jetzt):
                     if len(galerie) >= soll:
@@ -473,7 +554,7 @@ def fetch_gallery(url: str, headless: bool = True, max_clicks: int = 40,
                       f"(Soll: {soll}).")
 
             ergaenzt = False
-            if total and len(galerie) < total:
+            if AUFFUELLEN and total and len(galerie) < total:
                 if eigene is None:
                     print("[i] Diaschau unvollständig, aber die Grenze zu fremden "
                           "Objekten ist unklar - es wird NICHT ergänzt.")
@@ -487,8 +568,7 @@ def fetch_gallery(url: str, headless: bool = True, max_clicks: int = 40,
                             gesehen.add(uuid)
                             a, c = seen.get(uuid, ("", ""))
                             galerie.append((uuid, a, c))
-                    print(f"[i] Ergänzt auf {len(galerie)} Bilder "
-                          f"(nur eigene).")
+                    print(f"[i] Ergänzt auf {len(galerie)} Bilder (nur eigene).")
 
             # Wenn die Diaschau nicht vollstaendig war: Screenshot mitgeben,
             # damit man sieht, was der Browser dort wirklich vor sich hat.
