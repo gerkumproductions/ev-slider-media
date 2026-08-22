@@ -208,6 +208,30 @@ def _zaehlerstand(page) -> str:
         return ""
 
 
+# Sucht den Weiter-Pfeil ueber seine LAGE, nicht ueber Beschriftungen:
+# rechter Bildrand, vertikal mittig, anklickbar. So finden wir ihn auch,
+# wenn er weder aria-label noch sprechende Klasse hat.
+_JS_PFEIL = r"""
+() => {
+  const W = window.innerWidth, H = window.innerHeight;
+  const kandidaten = [...document.querySelectorAll(
+    'button,[role="button"],a,svg,div,span')];
+  let best = null;
+  for (const el of kandidaten) {
+    const r = el.getBoundingClientRect();
+    if (r.width < 20 || r.height < 20 || r.width > 160 || r.height > 160) continue;
+    const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    if (cx < W * 0.72) continue;              // muss rechts liegen
+    if (cy < H * 0.25 || cy > H * 0.80) continue;  // vertikal mittig
+    if (!best || cx > best.cx) best = { el, cx, cy };
+  }
+  if (!best) return null;
+  best.el.scrollIntoView({block: 'center'});
+  return { x: Math.round(best.cx), y: Math.round(best.cy) };
+}
+"""
+
+
 def _weiterblaettern(page) -> bool:
     """Ein Bild weiter. Erfolg wird am Zähler geprüft - nicht daran, ob ein
     Klick möglich war. Erst wenn der Zähler sich ändert, ist wirklich
@@ -215,15 +239,20 @@ def _weiterblaettern(page) -> bool:
     """
     vorher = _zaehlerstand(page)
 
-    versuche = []
+    def pfeil_klicken():
+        pos = page.evaluate(_JS_PFEIL)
+        if not pos:
+            raise RuntimeError("kein Pfeil gefunden")
+        page.mouse.click(pos["x"], pos["y"])
+
+    versuche = [("Pfeil nach Lage", pfeil_klicken)]
     for sel in NEXT_SELECTORS:
         versuche.append(("klick " + sel, lambda s=sel: page.locator(s).last.click(timeout=1200)))
     versuche.append(("pfeiltaste", lambda: page.keyboard.press("ArrowRight")))
-    # Letzte Rettung: den rechten Bildrand anklicken, dort liegt bei
-    # Bildergalerien meist die Weiter-Fläche.
+
     def rechts_klicken():
         box = page.viewport_size or {"width": 1440, "height": 1000}
-        page.mouse.click(int(box["width"] * 0.95), int(box["height"] * 0.5))
+        page.mouse.click(int(box["width"] * 0.90), int(box["height"] * 0.5))
     versuche.append(("rechter Rand", rechts_klicken))
 
     for name, aktion in versuche:
@@ -233,8 +262,14 @@ def _weiterblaettern(page) -> bool:
             continue
         page.wait_for_timeout(900)
         if _zaehlerstand(page) != vorher:
+            if name != _weiterblaettern.zuletzt:
+                print(f"[i] Weiterblättern per: {name}")
+                _weiterblaettern.zuletzt = name
             return True
     return False
+
+
+_weiterblaettern.zuletzt = ""
 
 
 def _current_slide(page) -> tuple[str, str, str]:
@@ -328,6 +363,11 @@ def fetch_gallery(url: str, headless: bool = True, max_clicks: int = 40,
                   f"{_zaehlerstand(page) or 'keiner'}")
 
             total = expected_total(page.inner_text("body")) or total
+            try:
+                box = page.viewport_size or {"width": 1440, "height": 1000}
+                page.mouse.move(box["width"] // 2, box["height"] // 2)
+            except Exception:
+                pass
 
             # Durch die Vollbild-Ansicht blättern und dabei Bild + Unterschrift
             # paarweise mitschreiben. Das ist die verlaessliche Quelle: hier
