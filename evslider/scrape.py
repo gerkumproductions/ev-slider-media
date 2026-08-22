@@ -307,6 +307,13 @@ def scrape(url: str, browser: str = "auto") -> Expose:
     full.source = "browser"
     full.aus_galerie = bool(res.get("aus_galerie"))
 
+    # Notbremse: Nie mehr Bilder als der Zähler der Seite angibt. Alles
+    # darüber hinaus kann nur von einem fremden Objekt stammen.
+    if full.expected_images and len(full.photos) > full.expected_images:
+        print(f"[!] {len(full.photos)} Bilder, laut Seite gibt es nur "
+              f"{full.expected_images} - überzählige werden verworfen.")
+        full.photos = full.photos[:full.expected_images]
+
     if full.expected_images and len(full.photos) < full.expected_images:
         print(f"[!] Nur {len(full.photos)} von {full.expected_images} Bildern gefunden.")
     return full
