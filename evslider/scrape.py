@@ -29,6 +29,26 @@ UPLOADCARE_RE = re.compile(
 # Bilder in Originalauflösung statt der komprimierten Web-Variante
 HIGH_RES = "-/format/jpeg/-/stretch/off/-/progressive/yes/-/resize/2000x/-/quality/best/"
 
+# Beschriftungen von Bedienelementen. Auf der E&V-Seite steckt das
+# Galeriebild im Weiter-Element und traegt deshalb dessen alt-Text
+# ("go to next image"). Ohne diesen Filter stand das als Bildtitel im
+# fertigen Slide. Bewusst hier und nicht nur in browser.py: Hier laufen
+# ALLE Wege zusammen (JSON, DOM, Browser), egal woher der Text kam.
+UI_TEXT_RE = re.compile(
+    r"^\s*(go\s+to\b|gehe\s+zu\b|next\b|previous\b|prev\b|weiter\b|zur[üu]ck\b"
+    r"|n[äa]chste|vorherige|schlie[ßs]en\b|close\b|zoom|vergr[öo]|verklein"
+    r"|vollbild\b|fullscreen\b|men[üu]\b|teilen\b|share\b|merken\b|drucken\b"
+    r"|play\b|pause\b|slide\b|karussell|carousel|bild\s*\d+\s*$|image\s*\d+\s*$)",
+    re.IGNORECASE)
+
+
+def saubere_beschriftung(text: str) -> str:
+    """Leere Zeichenkette, wenn der Text eine Bedienbeschriftung ist."""
+    t = (text or "").strip()
+    if not t or UI_TEXT_RE.match(t):
+        return ""
+    return t
+
 
 @dataclass
 class Photo:
@@ -40,6 +60,27 @@ class Photo:
     @property
     def url(self) -> str:
         return f"https://uploadcare.engelvoelkers.com/{self.uuid}/{HIGH_RES}"
+
+
+def bereinige_beschriftungen(photos: list["Photo"]) -> list["Photo"]:
+    """Bedienbeschriftungen aus alt, caption und title entfernen.
+
+    Lieber gar kein Titel als ein falscher: Ein Slide ohne Bildtitel sieht
+    unauffaellig aus, "go to next image" faellt jedem Betrachter auf.
+    """
+    entfernt: list[str] = []
+    for p in photos:
+        for feld in ("alt", "caption", "title"):
+            alt_wert = getattr(p, feld, "") or ""
+            neu = saubere_beschriftung(alt_wert)
+            if alt_wert.strip() and not neu:
+                entfernt.append(f"{feld}={alt_wert.strip()[:40]!r}")
+            setattr(p, feld, neu)
+    if entfernt:
+        print(f"[i] {len(entfernt)} Bedienbeschriftung(en) verworfen: "
+              f"{', '.join(entfernt[:4])}"
+              f"{' ...' if len(entfernt) > 4 else ''}")
+    return photos
 
 
 @dataclass
@@ -158,7 +199,8 @@ def _photos_from_json(blobs: list[dict]) -> list[Photo]:
                             continue
                         alt = (item.get("alt") or item.get("caption")
                                or item.get("description") or item.get("title") or "")
-                        found.append(Photo(uuid=str(uuid), alt=str(alt)))
+                        found.append(Photo(uuid=str(uuid),
+                                           alt=saubere_beschriftung(str(alt))))
                 if len(found) > len(best):
                     best = found
     # Duplikate raus, Reihenfolge behalten
@@ -187,7 +229,7 @@ def _photos_from_dom(soup: BeautifulSoup, html: str) -> list[Photo]:
         if m.group(1) in seen:
             continue
         seen.add(m.group(1))
-        out.append(Photo(uuid=m.group(1), alt=alt))
+        out.append(Photo(uuid=m.group(1), alt=saubere_beschriftung(alt)))
     return out
 
 
@@ -255,7 +297,8 @@ def parse(html: str, url: str) -> Expose:
         h = soup.find(string=re.compile(r"^[A-ZÄÖÜ][\wäöüß\-]+,\s*[A-ZÄÖÜ]"))
         ex.location = h.strip() if h else ""
 
-    ex.photos = _photos_from_json(blobs) or _photos_from_dom(soup, html)
+    ex.photos = bereinige_beschriftungen(
+        _photos_from_json(blobs) or _photos_from_dom(soup, html))
 
     from .browser import expected_total
     ex.expected_images = expected_total(text)
@@ -304,6 +347,9 @@ def scrape(url: str, browser: str = "auto") -> Expose:
             setattr(full, f_name, getattr(ex, f_name))
     full.photos = [Photo(uuid=u, alt=a, caption=c)
                    for u, a, c in res["photos"]] or ex.photos
+    # Letzte Station vor dem Zeichnen: hier kommt nichts mehr durch, egal ob
+    # es aus dem JSON, dem DOM oder der Diaschau stammt.
+    full.photos = bereinige_beschriftungen(full.photos)
     full.expected_images = res.get("expected") or ex.expected_images
     full.source = "browser"
     full.aus_galerie = bool(res.get("aus_galerie"))
