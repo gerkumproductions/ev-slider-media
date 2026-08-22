@@ -18,21 +18,19 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: pip
-
       - name: Pakete installieren
         run: |
           pip install -r requirements.txt
           python -m playwright install --with-deps chromium
-
       - name: Konfiguration bereitstellen
         run: |
           [ -f config.yaml ] || cp config.example.yaml config.yaml
-
+          echo "[i] Verwendete Konfiguration:"
+          grep -n "blog_id\|shop_pflicht\|default_shop" config.yaml || true
       - name: Telegram abfragen und Slider bauen
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
@@ -41,5 +39,11 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           METRICOOL_USER_TOKEN: ${{ secrets.METRICOOL_USER_TOKEN }}
           METRICOOL_USER_ID: ${{ secrets.METRICOOL_USER_ID }}
-          METRICOOL_BLOG_ID: ${{ secrets.METRICOOL_BLOG_ID }}
+          # Der Lauf wartet selbst auf Nachrichten, statt einmal nachzusehen
+          # und sich zu beenden. Zusammen mit dem 5-Minuten-Zeitplan und der
+          # concurrency-Sperre ist der Bot damit fast durchgehend erreichbar.
+          EVSLIDER_POLL_MINUTES: "12"
+          # METRICOOL_BLOG_ID bewusst NICHT gesetzt: Bei zwei Shops muss die
+          # blogId aus der config.yaml kommen, sonst landet ein Post auf dem
+          # falschen Profil. Siehe shops.<name>.metricool.blog_id
         run: python -m evslider.telegram
