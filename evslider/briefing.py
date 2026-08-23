@@ -60,6 +60,42 @@ class Briefing:
     keyword: str = ""
     thema: str = ""
 
+    def caption(self, cfg) -> str:
+        """Instagram-Text aus dem Briefing.
+
+        Keine Erfindung neuer Inhalte: Es wird zusammengesetzt, was schon auf
+        den Slides steht. Der Slider ist die Botschaft, der Text fuehrt hin.
+        """
+        cover = next((s for s in self.slides if s["kind"] == "cover"), None)
+        cta = next((s for s in self.slides if s["kind"] == "cta"), None)
+        zeilen = []
+        if cover:
+            kopf = " ".join(x for x in (cover.get("eyebrow"),
+                                        cover.get("headline")) if x)
+            if kopf:
+                zeilen.append(kopf)
+        for s in self.slides:
+            if s["kind"] != "content":
+                continue
+            teil = s.get("headline", "").replace("|", " ").replace("~", "")
+            sub = s.get("subline", "")
+            zeilen.append(f"· {teil}" + (f" — {sub}" if sub else ""))
+        if self.keyword:
+            vorlage = cfg.get("caption.cta_template", "")
+            if vorlage:
+                zeilen.append("")
+                zeilen.append(vorlage.format(keyword=self.keyword))
+        elif cta and cta.get("subline"):
+            zeilen.append("")
+            zeilen.append(cta["subline"])
+        tags = cfg.get("caption.hashtags") or []
+        if tags:
+            zeilen.append("")
+            zeilen.append(" ".join(tags))
+        text = "\n".join(zeilen).strip()
+        grenze = int(cfg.get("caption.max_chars", 1400))
+        return text[:grenze]
+
     def titel(self) -> str:
         """Kurztitel fuer Ordnernamen und Telegram-Rueckmeldung."""
         if self.slides:
