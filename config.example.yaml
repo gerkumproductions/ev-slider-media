@@ -42,11 +42,11 @@ shops:
       hashtags: ["#bonn", "#immobilienbonn", "#heuserimmobilien"]
       cta_template: 'Kommentieren Sie "{keyword}" und wir melden uns bei Ihnen.'
     fonts:                         # feine Serif + schlanke Sans
-      head_regular: "assets/fonts/heuser/CormorantGaramond-Variable.ttf"
-      head_bold:    "assets/fonts/heuser/CormorantGaramond-Variable.ttf"
-      text_regular: "assets/fonts/heuser/Jost-Variable.ttf"
-      text_light:   "assets/fonts/heuser/Jost-Variable.ttf"
-      text_bold:    "assets/fonts/heuser/Jost-Variable.ttf"
+      head_regular: "assets/fonts/CormorantGaramond-Variable.ttf"
+      head_bold:    "assets/fonts/CormorantGaramond-Variable.ttf"
+      text_regular: "assets/fonts/Jost-Variable.ttf"
+      text_light:   "assets/fonts/Jost-Variable.ttf"
+      text_bold:    "assets/fonts/Jost-Variable.ttf"
     slides:
       layout: "heuser"             # waehlt HeuserRenderer statt Renderer
       palette:                     # aus den Referenz-Slides gemessen
