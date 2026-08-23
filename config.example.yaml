@@ -32,12 +32,19 @@ shops:
     aliases: ["heu", "hi"]
     brand:
       shop_name: "Heuser Immobilien"
-      handle: "@___"               # FEHLT NOCH - bestimmt auch den Ausgabeordner
+      handle: "@heuserimmobilien"  # bestimmt auch den Ausgabeordner
     metricool:
       blog_id: "5668636"
+      auto_publish: false          # Post wartet im Kalender auf Freigabe
+      networks: ["instagram"]      # nur die Kanaele, die Heuser wirklich hat
     # false = Slides werden nur gebaut und zur Ansicht geschickt, nichts
     # eingeplant. Erst auf true stellen, wenn Design und Text abgestimmt sind.
-    veroeffentlichen: false
+    # true = Posts werden bei Metricool eingeplant.
+    veroeffentlichen: true
+    metricool_hinweis: >
+      auto_publish false heisst: Der Post liegt im Metricool-Kalender, geht
+      aber nicht von selbst raus. Jemand gibt ihn dort frei. Erst umstellen,
+      wenn ein paar Posts sauber durchgelaufen sind.
     caption:
       hashtags: ["#bonn", "#immobilienbonn", "#heuserimmobilien"]
       cta_template: 'Kommentieren Sie "{keyword}" und wir melden uns bei Ihnen.'
