@@ -43,15 +43,12 @@ Regeln:
   einzelnes starkes Wort oder eine Zahl plus Wort.
 - subline: ein bis zwei kurze Sätze, zusammen höchstens 120 Zeichen.
   Auf Cover und CTA höchstens 4 Wörter.
-- Umbrüche sind Pflicht, nicht optional. Prüfe JEDE Headline:
-  · Passen zwei Wörter nicht nebeneinander, setze `|` an die gewünschte
-    Umbruchstelle. Beispiel: "Ohne Finanzierungszusage besichtigen" wird zu
-    "Ohne Finanzierungs-|zusage besichtigen".
-  · Enthält die Headline ein Wort mit mehr als 12 Zeichen, setze `~` an eine
-    sprachlich korrekte Trennstelle darin. Beispiel: "Besichtigung ohne
-    Check~liste", "Die Neben~kosten unterschätzen".
-  · Ohne diese Markierungen trennt der Satz an einer beliebigen Stelle und
-    die Headline sieht falsch aus.
+- Umbrüche sind Pflicht. Prüfe JEDE Headline: Passen zwei Wörter nicht
+  nebeneinander, setze `|` an die Umbruchstelle ("Ohne Finanzierungs-|zusage
+  besichtigen"). Enthält sie ein Wort mit mehr als 12 Zeichen, setze `~` an
+  eine korrekte Trennstelle darin ("Besichtigung ohne Check~liste").
+- Jeder Wert steht in EINER Zeile. Niemals einen Zeilenumbruch in einen Wert
+  schreiben - das macht die Antwort unlesbar.
 - motiv: was auf dem Foto zu sehen ist, ein knapper Satz. NUR das Motiv,
   keine Angaben zu Stil, Licht, Kamera oder Farben.
 - Sprache: Deutsch, Sie-Form, sachlich. Keine Ausrufezeichen, keine Emojis,
@@ -128,7 +125,18 @@ def _json_aus_antwort(text: str) -> dict:
         if anfang < 0 or ende <= anfang:
             raise ValueError(f"Keine JSON-Antwort erhalten: {text[:200]}")
         text = text[anfang:ende + 1]
-    return json.loads(text)
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        # strict=False erlaubt rohe Zeilenumbrueche in Strings. Genau das
+        # liefert das Modell gelegentlich, und daran scheitert sonst der
+        # ganze Lauf.
+        return json.loads(text, strict=False)
+
+
+def _eine_zeile(text: str) -> str:
+    """Zeilenumbrueche und Doppelleerzeichen raus - Slides setzen selbst um."""
+    return re.sub(r"\s+", " ", (text or "")).strip()
 
 
 def _pruefen(daten: dict, max_slides: int) -> list[dict]:
@@ -140,14 +148,14 @@ def _pruefen(daten: dict, max_slides: int) -> list[dict]:
         kind = s.get("kind", "content")
         if kind not in ("cover", "content", "cta"):
             kind = "content"
-        if not (s.get("headline") or "").strip():
+        if not _eine_zeile(s.get("headline")):
             continue                      # ohne Headline kein Slide
         out.append({
             "kind": kind,
-            "eyebrow": (s.get("eyebrow") or "").strip(),
-            "headline": (s.get("headline") or "").strip(),
-            "subline": (s.get("subline") or "").strip(),
-            "motiv": (s.get("motiv") or "").strip(),
+            "eyebrow": _eine_zeile(s.get("eyebrow")),
+            "headline": _eine_zeile(s.get("headline")),
+            "subline": _eine_zeile(s.get("subline")),
+            "motiv": _eine_zeile(s.get("motiv")),
         })
     if not out:
         raise ValueError("Keine verwertbaren Slides in der Antwort.")
@@ -155,7 +163,22 @@ def _pruefen(daten: dict, max_slides: int) -> list[dict]:
 
 
 def erzeuge(text: str, cfg, keyword: str = "") -> Briefing:
-    """Briefing-Text -> Briefing. Wirft bei unbrauchbarer Antwort."""
+    """Briefing-Text -> Briefing.
+
+    Ein zweiter Versuch, falls die erste Antwort kein gueltiges JSON war -
+    billiger als ein abgebrochener Lauf.
+    """
+    letzter = None
+    for versuch in (1, 2):
+        try:
+            return _einmal(text, cfg, keyword, streng=(versuch == 2))
+        except (ValueError, json.JSONDecodeError) as exc:
+            letzter = exc
+            print(f"[!] Briefing-Antwort unbrauchbar (Versuch {versuch}): {exc}")
+    raise RuntimeError(f"Briefing konnte nicht gelesen werden: {letzter}")
+
+
+def _einmal(text: str, cfg, keyword: str, streng: bool) -> Briefing:
     modell = cfg.get("caption.model", "claude-sonnet-5")
     max_slides = int(cfg.get("slides.max_total", 10))
     anweisung = cfg.get("briefing.zusatz", "") or ""
@@ -166,6 +189,10 @@ def erzeuge(text: str, cfg, keyword: str = "") -> Briefing:
                   f"kommentieren.")
     if anweisung:
         frage += f"\n\nZusätzlich beachten:\n{anweisung}"
+    if streng:
+        frage += ("\n\nWICHTIG: Die letzte Antwort war kein gültiges JSON. "
+                  "Antworte diesmal mit einer einzigen JSON-Zeile pro Slide, "
+                  "ohne Zeilenumbrüche innerhalb der Werte.")
 
     r = requests.post(
         API_URL,
@@ -173,7 +200,7 @@ def erzeuge(text: str, cfg, keyword: str = "") -> Briefing:
                  "anthropic-version": "2023-06-01",
                  "content-type": "application/json"},
         json={"model": modell,
-              "max_tokens": 2000,
+              "max_tokens": int(cfg.get("briefing.max_tokens", 4000)),
               "system": SYSTEM,
               "messages": [{"role": "user", "content": frage}]},
         timeout=120,
