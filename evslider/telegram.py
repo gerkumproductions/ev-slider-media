@@ -125,15 +125,18 @@ def briefing_erkennen(text: str, cfg):
 
     Rueckgabe: (shop_key, thema, stichwort) oder None.
     """
-    woerter = text.strip().split()
-    if not woerter:
+    zeilen = text.strip().splitlines()
+    if not zeilen:
         return None
-    key = _match_shop(woerter[0], shop_alias_map(cfg))
+    kopf = zeilen[0].split(None, 1)
+    key = _match_shop(kopf[0], shop_alias_map(cfg))
     if not key:
         return None
     if cfg.for_shop(key).get("slides.layout", "ev") == "ev":
         return None                      # E&V-Shops brauchen einen Link
-    rest = " ".join(woerter[1:]).strip()
+    # Zeilenumbrueche bleiben erhalten - das Briefing ist zeilenweise
+    # aufgebaut, ein Zusammenziehen zu einer Zeile wuerde es zerstoeren.
+    rest = "\n".join(([kopf[1]] if len(kopf) > 1 else []) + zeilen[1:]).strip()
     if len(rest) < 10:                   # zu duenn fuer ein Briefing
         return None
     stichwort = ""
