@@ -64,7 +64,21 @@ shops:
         aspect_content: "4:3"      # Inhaltsslides zeigen nur ein breites Band
         timeout_s: 240             # Wartezeit je Bild
         cache: "out/_bilder"
-        stil: ""                   # leer = Vorgabe aus bilder.py
+        # Der Look aller Bilder. Das Sprachmodell liefert nur das Motiv,
+        # der Stil kommt von hier - sonst faellt der Slider auseinander.
+        # Hier nachjustieren, nicht im Code.
+        stil: >
+          Fotorealistische Architektur- und Interieurfotografie im Charakter
+          von Bonn-Bad Godesberg: gepflegte Gruenderzeit- und Nachkriegsvillen,
+          Stuck, hohe Sprossenfenster, Altbau-Parkett und Fischgraet, ruhige
+          Strassen mit alten Laubbaeumen, Vorgaerten mit geschnittenen Hecken
+          und Backsteinmauern, im Hintergrund gelegentlich bewaldete Huegel.
+          Lebendig und bewohnt statt leergeraeumt: warmes Nachmittagslicht mit
+          klaren Schatten, kraeftige aber natuerliche Farben, Pflanzen, Buecher,
+          Textilien, offene Tueren, Blick in angrenzende Raeume.
+          Menschen hoechstens klein, angeschnitten oder von hinten und nie
+          erkennbar. Keine real existierenden Gebaeude nachbilden.
+          Keine Schrift, keine Logos, keine Hausnummern, kein HDR.
 
 # Gilt nur noch, wenn genau EIN Shop konfiguriert ist. Bei mehreren Shops
 # ist das Kuerzel in der Nachricht Pflicht (siehe shop_pflicht).
