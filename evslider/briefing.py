@@ -200,6 +200,8 @@ def _einmal(text: str, cfg, keyword: str, streng: bool) -> Briefing:
                  "anthropic-version": "2023-06-01",
                  "content-type": "application/json"},
         json={"model": modell,
+              # Falls das Modell mit Denkbloecken antwortet, bleibt der
+              # Textblock trotzdem erhalten - wir filtern unten nach type.
               "max_tokens": int(cfg.get("briefing.max_tokens", 4000)),
               "system": SYSTEM,
               "messages": [{"role": "user", "content": frage}]},
@@ -208,7 +210,25 @@ def _einmal(text: str, cfg, keyword: str, streng: bool) -> Briefing:
     if r.status_code >= 400:
         raise RuntimeError(f"Anthropic {r.status_code}: {r.text[:300]}")
 
-    antwort = "".join(b.get("text", "") for b in r.json().get("content", [])
+    daten = r.json()
+    bloecke = daten.get("content", []) or []
+    antwort = "".join(b.get("text", "") for b in bloecke
                       if b.get("type") == "text")
-    slides = _pruefen(_json_aus_antwort(antwort), max_slides)
+
+    if not antwort.strip():
+        # Kein Text in der Antwort. Damit sich das nachvollziehen laesst,
+        # kommt die Rohantwort ins Protokoll der Action.
+        print("[!] Antwort ohne Text. Rohantwort:")
+        print(json.dumps(daten, ensure_ascii=False)[:1500])
+        raise ValueError(
+            f"Antwort ohne Text (stop_reason={daten.get('stop_reason')!r}, "
+            f"Bloecke={[b.get('type') for b in bloecke]}, "
+            f"Modell={daten.get('model')!r})")
+
+    try:
+        slides = _pruefen(_json_aus_antwort(antwort), max_slides)
+    except (ValueError, json.JSONDecodeError):
+        print("[!] Antwort war kein gueltiges JSON. Erhalten:")
+        print(antwort[:1500])
+        raise
     return Briefing(slides=slides, keyword=keyword, thema=text.strip()[:200])
