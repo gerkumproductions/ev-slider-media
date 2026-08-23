@@ -27,6 +27,37 @@ shops:
     metricool:
       blog_id: "5771722"           # blogId des Ruhrgebiet-Accounts
 
+  # --- Heuser Immobilien: eigenes Layout, Slider aus Briefings statt Exposes ---
+  heuser:
+    aliases: ["heu", "hi"]
+    brand:
+      shop_name: "Heuser Immobilien"
+      handle: "@___"               # FEHLT NOCH - bestimmt auch den Ausgabeordner
+    metricool:
+      blog_id: "5668636"
+    # false = Slides werden nur gebaut und zur Ansicht geschickt, nichts
+    # eingeplant. Erst auf true stellen, wenn Design und Text abgestimmt sind.
+    veroeffentlichen: false
+    fonts:                         # fehlt eine Datei, greift die Ersatzschrift
+      head_regular: "assets/fonts/heuser/Display-Regular.ttf"
+      head_bold:    "assets/fonts/heuser/Display-Bold.ttf"
+      text_regular: "assets/fonts/heuser/Sans-Regular.ttf"
+      text_light:   "assets/fonts/heuser/Sans-Light.ttf"
+      text_bold:    "assets/fonts/heuser/Sans-Medium.ttf"
+    slides:
+      layout: "heuser"             # waehlt HeuserRenderer statt Renderer
+      palette:                     # aus den Referenz-Slides gemessen
+        bg: "#F5F0E8"
+        accent: "#90806D"
+        headline: "#2B2721"
+        body: "#3D3933"
+        rule: "#A89A8A"
+        on_photo: "#FFFFFF"
+      bild:
+        provider: ""               # FEHLT NOCH - ohne Provider bleiben Slides ohne Foto
+        cache: "out/_bilder"
+        stil: ""                   # leer = Vorgabe aus bilder.py
+
 # Gilt nur noch, wenn genau EIN Shop konfiguriert ist. Bei mehreren Shops
 # ist das Kuerzel in der Nachricht Pflicht (siehe shop_pflicht).
 default_shop: "rheinland"
@@ -53,7 +84,9 @@ fonts:
   text_light:   "assets/fonts/EngelVoelkersText_Lt.ttf"
   text_bold:    "assets/fonts/EngelVoelkersText_Bd.ttf"
 
+# Gilt fuer alle Shops ohne eigene Angabe. "ev" = das bestehende E&V-Layout.
 slides:
+  layout: "ev"
   width: 1080
   height: 1350            # 4:5
   max_total: 10           # Instagram-Maximum: Titel + Fakten + bis zu 8 Fotoseiten
