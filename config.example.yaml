@@ -41,12 +41,12 @@ shops:
     caption:
       hashtags: ["#bonn", "#immobilienbonn", "#heuserimmobilien"]
       cta_template: 'Kommentieren Sie "{keyword}" und wir melden uns bei Ihnen.'
-    fonts:                         # fehlt eine Datei, greift die Ersatzschrift
-      head_regular: "assets/fonts/heuser/Display-Regular.ttf"
-      head_bold:    "assets/fonts/heuser/Display-Bold.ttf"
-      text_regular: "assets/fonts/heuser/Sans-Regular.ttf"
-      text_light:   "assets/fonts/heuser/Sans-Light.ttf"
-      text_bold:    "assets/fonts/heuser/Sans-Medium.ttf"
+    fonts:                         # feine Serif + schlanke Sans
+      head_regular: "assets/fonts/heuser/CormorantGaramond-Variable.ttf"
+      head_bold:    "assets/fonts/heuser/CormorantGaramond-Variable.ttf"
+      text_regular: "assets/fonts/heuser/Jost-Variable.ttf"
+      text_light:   "assets/fonts/heuser/Jost-Variable.ttf"
+      text_bold:    "assets/fonts/heuser/Jost-Variable.ttf"
     slides:
       layout: "heuser"             # waehlt HeuserRenderer statt Renderer
       palette:                     # aus den Referenz-Slides gemessen
@@ -57,7 +57,12 @@ shops:
         rule: "#A89A8A"
         on_photo: "#FFFFFF"
       bild:
-        provider: ""               # FEHLT NOCH - ohne Provider bleiben Slides ohne Foto
+        provider: "higgsfield"
+        model: "higgsfield-ai/soul/standard"
+        resolution: "720p"         # hoehere Werte erst testen, bevor sie hier stehen
+        aspect_cover: "3:4"        # Cover und CTA sind vollflaechig hochkant
+        aspect_content: "4:3"      # Inhaltsslides zeigen nur ein breites Band
+        timeout_s: 240             # Wartezeit je Bild
         cache: "out/_bilder"
         stil: ""                   # leer = Vorgabe aus bilder.py
 
