@@ -47,6 +47,7 @@ Regeln:
   nebeneinander, setze `|` an die Umbruchstelle ("Ohne Finanzierungs-|zusage
   besichtigen"). Enthält sie ein Wort mit mehr als 12 Zeichen, setze `~` an
   eine korrekte Trennstelle darin ("Besichtigung ohne Check~liste").
+- `|` und `~` NUR in der Headline verwenden, nie in eyebrow oder subline.
 - Jeder Wert steht in EINER Zeile. Niemals einen Zeilenumbruch in einen Wert
   schreiben - das macht die Antwort unlesbar.
 - motiv: was auf dem Foto zu sehen ist, ein knapper Satz. NUR das Motiv,
@@ -139,6 +140,10 @@ def _eine_zeile(text: str) -> str:
     return re.sub(r"\s+", " ", (text or "")).strip()
 
 
+def _ohne_marken(text: str) -> str:
+    return text.replace("~", "").replace("|", " ").replace("  ", " ").strip()
+
+
 def _pruefen(daten: dict, max_slides: int) -> list[dict]:
     slides = daten.get("slides") or []
     if not slides:
@@ -152,9 +157,12 @@ def _pruefen(daten: dict, max_slides: int) -> list[dict]:
             continue                      # ohne Headline kein Slide
         out.append({
             "kind": kind,
-            "eyebrow": _eine_zeile(s.get("eyebrow")),
+            # Umbruchmarkierungen gehoeren NUR in die Headline. In Eyebrow
+            # und Subline setzt der Renderer selbst um - stehen sie dort,
+            # erscheinen sie als sichtbares Zeichen im Text.
+            "eyebrow": _ohne_marken(_eine_zeile(s.get("eyebrow"))),
             "headline": _eine_zeile(s.get("headline")),
-            "subline": _eine_zeile(s.get("subline")),
+            "subline": _ohne_marken(_eine_zeile(s.get("subline"))),
             "motiv": _eine_zeile(s.get("motiv")),
         })
     if not out:
