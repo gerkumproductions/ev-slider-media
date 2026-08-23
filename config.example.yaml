@@ -38,6 +38,9 @@ shops:
     # false = Slides werden nur gebaut und zur Ansicht geschickt, nichts
     # eingeplant. Erst auf true stellen, wenn Design und Text abgestimmt sind.
     veroeffentlichen: false
+    caption:
+      hashtags: ["#bonn", "#immobilienbonn", "#heuserimmobilien"]
+      cta_template: 'Kommentieren Sie "{keyword}" und wir melden uns bei Ihnen.'
     fonts:                         # fehlt eine Datei, greift die Ersatzschrift
       head_regular: "assets/fonts/heuser/Display-Regular.ttf"
       head_bold:    "assets/fonts/heuser/Display-Bold.ttf"
