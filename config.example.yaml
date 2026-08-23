@@ -117,6 +117,11 @@ slides:
   facts: ["Wohnfläche", "Badezimmer", "Grundstück|Baujahr", "Zimmer"]
   fact_icon: "haken"      # "haken" = ueberall ein Haken | "auto" = eigene Symbole
 
+# === Briefings ===
+# Shops mit layout != "ev" bekommen ihre Slides direkt aus der Telegram-
+# Nachricht. Kein Sprachmodell, keine Erfindung: Was dort steht, steht
+# spaeter auf dem Slide. Format siehe evslider/briefing.py.
+
 caption:
   model: "claude-sonnet-5"
   max_chars: 1400
