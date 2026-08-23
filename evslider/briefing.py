@@ -43,8 +43,15 @@ Regeln:
   einzelnes starkes Wort oder eine Zahl plus Wort.
 - subline: ein bis zwei kurze Sätze, zusammen höchstens 120 Zeichen.
   Auf Cover und CTA höchstens 4 Wörter.
-- Bricht eine Headline schlecht um, setze `|` an die gewünschte Umbruchstelle
-  oder `~` an eine erlaubte Trennstelle innerhalb eines langen Wortes.
+- Umbrüche sind Pflicht, nicht optional. Prüfe JEDE Headline:
+  · Passen zwei Wörter nicht nebeneinander, setze `|` an die gewünschte
+    Umbruchstelle. Beispiel: "Ohne Finanzierungszusage besichtigen" wird zu
+    "Ohne Finanzierungs-|zusage besichtigen".
+  · Enthält die Headline ein Wort mit mehr als 12 Zeichen, setze `~` an eine
+    sprachlich korrekte Trennstelle darin. Beispiel: "Besichtigung ohne
+    Check~liste", "Die Neben~kosten unterschätzen".
+  · Ohne diese Markierungen trennt der Satz an einer beliebigen Stelle und
+    die Headline sieht falsch aus.
 - motiv: was auf dem Foto zu sehen ist, ein knapper Satz. NUR das Motiv,
   keine Angaben zu Stil, Licht, Kamera oder Farben.
 - Sprache: Deutsch, Sie-Form, sachlich. Keine Ausrufezeichen, keine Emojis,
