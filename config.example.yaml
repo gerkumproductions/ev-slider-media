@@ -35,16 +35,12 @@ shops:
       handle: "@heuserimmobilien"  # bestimmt auch den Ausgabeordner
     metricool:
       blog_id: "5668636"
-      auto_publish: false          # Post wartet im Kalender auf Freigabe
-      networks: ["instagram"]      # nur die Kanaele, die Heuser wirklich hat
-    # false = Slides werden nur gebaut und zur Ansicht geschickt, nichts
-    # eingeplant. Erst auf true stellen, wenn Design und Text abgestimmt sind.
-    # true = Posts werden bei Metricool eingeplant.
+      # auto_publish und networks kommen aus den Grundeinstellungen unten:
+      # automatisch veroeffentlichen, Instagram + Facebook + LinkedIn.
+    # true  = Slides werden gebaut UND bei Metricool eingeplant.
+    # false = Slides werden nur gebaut und zur Ansicht nach Telegram geschickt.
+    #         Zum Abstimmen von Design oder Text kurz umstellen.
     veroeffentlichen: true
-    metricool_hinweis: >
-      auto_publish false heisst: Der Post liegt im Metricool-Kalender, geht
-      aber nicht von selbst raus. Jemand gibt ihn dort frei. Erst umstellen,
-      wenn ein paar Posts sauber durchgelaufen sind.
     caption:
       hashtags: ["#bonn", "#immobilienbonn", "#heuserimmobilien"]
       cta_template: 'Kommentieren Sie "{keyword}" und wir melden uns bei Ihnen.'
