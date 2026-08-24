@@ -147,6 +147,99 @@ def _slide(zeilen: list[str]) -> tuple[dict, str]:
     return slide, art
 
 
+# --------------------------------------------------------------- Markdown
+# Zweites Format: so sehen Slider aus, die anderswo ausgearbeitet wurden.
+#   ## SLIDE 1 - Cover
+#   Headline:
+#   > Energieklasse G oder H -
+#   > Schnaeppchen oder Kostenfalle?
+#   Subline:
+#   > Was Kaeufer jetzt wissen muessen
+#   Visual Prompt:
+#   *Close-up eines Energieausweises ...*
+
+MD_SLIDE = re.compile(r"^#{1,6}\s*SLIDE\b(.*)$", re.IGNORECASE)
+MD_FELD = re.compile(
+    r"^\**\s*(headline|subline|text|visual\s*prompt|bild|motiv)\s*\**\s*:\s*(.*)$",
+    re.IGNORECASE)
+MD_FELDER = {"headline": "headline", "subline": "subline", "text": "text",
+             "visualprompt": "motiv", "bild": "motiv", "motiv": "motiv"}
+
+
+def _md_zeile(z: str) -> str:
+    """Zitatpfeile, Sternchen und Aufzaehlungspunkte abraeumen."""
+    z = re.sub(r"^\s*>+\s?", "", z)
+    z = z.strip().strip("*").strip()
+    return z
+
+
+def ist_markdown(text: str) -> bool:
+    return bool(MD_SLIDE.search(text) or
+                re.search(r"^\**\s*(headline|visual\s*prompt)\s*\**\s*:",
+                          text, re.IGNORECASE | re.MULTILINE))
+
+
+def _md_lesen(text: str) -> list[dict]:
+    bloecke, aktuell = [], None
+    for roh in text.splitlines():
+        kopf = MD_SLIDE.match(roh.strip())
+        if kopf:
+            if aktuell:
+                bloecke.append(aktuell)
+            aktuell = {"art": kopf.group(1).lower(), "felder": {}, "feld": None}
+            continue
+        if aktuell is None:
+            continue
+        if re.match(r"^\s*-{3,}\s*$", roh):        # Trennlinie beendet nichts
+            continue
+        m = MD_FELD.match(roh.strip())
+        if m:
+            name = re.sub(r"\s", "", m.group(1).lower())
+            aktuell["feld"] = MD_FELDER.get(name)
+            rest = _md_zeile(m.group(2))
+            if aktuell["feld"] and rest:
+                aktuell["felder"].setdefault(aktuell["feld"], []).append(rest)
+            continue
+        if aktuell["feld"]:
+            zeile = _md_zeile(roh)
+            if zeile:
+                aktuell["felder"].setdefault(aktuell["feld"], []).append(zeile)
+    if aktuell:
+        bloecke.append(aktuell)
+
+    slides = []
+    for b in bloecke:
+        f = b["felder"]
+        art = ("cover" if "cover" in b["art"] else
+               "cta" if "cta" in b["art"] else "")
+        # Mehrzeilige Headline: die Umbrueche waren so gewollt.
+        headline = "|".join(f.get("headline", []))
+        # Jede Zeile unter "Text:" ist ein eigener Absatz. Erst saeubern,
+        # dann mit || verbinden - sonst frisst _sauber die Trennung.
+        absaetze = [_sauber(t) for t in f.get("text", []) if _sauber(t)]
+        sub_direkt = _sauber(" ".join(f.get("subline", [])))
+
+        if not art:
+            # Ohne Headline ist es eine Textseite, keine Schlagzeile.
+            art = "content" if headline else "text"
+
+        if art in ("cover", "cta") and not headline and absaetze:
+            # Cover und CTA brauchen eine Schlagzeile. Der erste Absatz ist
+            # sie - vollstaendig, nicht mitten im Wort abgeschnitten.
+            headline = absaetze[0]
+            absaetze = absaetze[1:]
+
+        subline = sub_direkt or "||".join(absaetze)
+        if sub_direkt and absaetze:
+            subline = "||".join([sub_direkt] + absaetze)
+
+        slides.append({"kind": art, "eyebrow": "",
+                       "headline": headline.strip(),
+                       "subline": subline,
+                       "motiv": _sauber(" ".join(f.get("motiv", [])))})
+    return [s for s in slides if s["headline"] or s["subline"]]
+
+
 def erzeuge(text: str, cfg, keyword: str = "") -> Briefing:
     """Telegram-Text -> Briefing. Kein Sprachmodell, keine Erfindung."""
     max_slides = int(cfg.get("slides.max_total", 10))
@@ -157,6 +250,13 @@ def erzeuge(text: str, cfg, keyword: str = "") -> Briefing:
     if m:
         keyword = keyword or m.group(1).strip()
         text = text[:m.start()] + text[m.end():]
+
+    if ist_markdown(text):
+        gelesen = _md_lesen(text)[:max_slides]
+        if not gelesen:
+            raise ValueError("Kein Slide erkannt.\n\n" + BEISPIEL)
+        return Briefing(slides=gelesen, keyword=keyword,
+                        thema=_sauber(text)[:200])
 
     roh = [_slide(z) for z in _absaetze(text)]
     roh = [(s, a) for s, a in roh if s.get("headline")]
