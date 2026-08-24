@@ -45,6 +45,11 @@ GEOM = {
     "cover_headline_top": 0.183,
     "cover_headline_size": 0.105,
     "cover_sub_gap": 0.082,
+    # Textseite: Fliesstext statt Schlagzeile
+    "text_top": 0.115,
+    "text_size": 0.0335,
+    "text_leading": 1.55,
+    "text_absatz": 0.55,          # Zusatzabstand zwischen Absaetzen, in Zeilen
     "cover_scrim": 82,            # Alpha des Schleiers oben, 0 = aus
     "cover_scrim_band": 0.48,
 }
@@ -167,6 +172,40 @@ class HeuserRenderer:
             self._place_photo(canvas, s["photo"], top, s.get("photo_inset", False))
         return canvas
 
+    def text_slide(self, s: dict) -> Image.Image:
+        """Seite mit Fliesstext: keine Schlagzeile, dafuer Platz zum Lesen.
+
+        Fuer Briefings, die einen Gedanken ausformulieren statt ihn auf drei
+        Woerter einzudampfen. Absaetze werden mit || getrennt.
+        """
+        canvas = Image.new("RGB", (self.W, self.H), self.c["bg"])
+        d = ImageDraw.Draw(canvas)
+        g = self.g
+        inner = self.W - 2 * self.M
+
+        y = self.H * g["text_top"]
+        if s.get("eyebrow"):
+            f = self.f.T(int(self.H * g["eyebrow_size"]))
+            self._tracked_centered(d, s["eyebrow"].upper(), f, y, self.c["accent"])
+            y += self.H * 0.045
+
+        fb = self.f.T(int(self.H * g["text_size"]))
+        lh = fb.size * g["text_leading"]
+        absaetze = [a.strip() for a in s.get("subline", "").split("||") if a.strip()]
+        for i, absatz in enumerate(absaetze):
+            for zeile in wrap(d, absatz, fb, inner):
+                self._centered(d, zeile, fb, y, self.c["body"])
+                y += lh
+            if i < len(absaetze) - 1:
+                y += lh * g["text_absatz"]
+
+        if s.get("photo"):
+            top = int(y + self.H * g["photo_min_gap"])
+            if self.H - top > self.H * 0.12:      # nur wenn noch Platz bleibt
+                self._place_photo(canvas, s["photo"], top,
+                                  s.get("photo_inset", False))
+        return canvas
+
     # ---------- Bausteine ----------
 
     def _place_photo(self, canvas, photo, top: int, inset: bool):
@@ -231,12 +270,24 @@ class HeuserRenderer:
         d.text(((self.W - w) / 2, y), text, font=font, fill=fill)
 
     def _tracked_centered(self, d, text, font, y, fill):
-        """PIL kennt kein letter-spacing - zeichenweise mit Vorschub."""
-        sp = font.size * self.g["eyebrow_track"]
-        widths = [d.textlength(c, font=font) for c in text]
-        x = (self.W - (sum(widths) + sp * (len(text) - 1))) / 2
+        """Gesperrter Text, zentriert. PIL kennt kein letter-spacing, also
+        zeichenweise mit Vorschub - und so lange verkleinert, bis die Zeile
+        in die Textspalte passt."""
+        if not text:
+            return
+        max_w = self.W - 2 * self.M
+        groesse = font.size
+        while groesse > 12:
+            f = self.f.T(groesse)
+            sp = f.size * self.g["eyebrow_track"]
+            widths = [d.textlength(c, font=f) for c in text]
+            gesamt = sum(widths) + sp * (len(text) - 1)
+            if gesamt <= max_w:
+                break
+            groesse -= 1
+        x = (self.W - gesamt) / 2
         for c, w in zip(text, widths):
-            d.text((x, y), c, font=font, fill=fill)
+            d.text((x, y), c, font=f, fill=fill)
             x += w + sp
 
     # ---------- Slider zusammenbauen ----------
@@ -251,6 +302,8 @@ class HeuserRenderer:
                 out.append(self.cover_slide(s))
             elif kind == "cta":
                 out.append(self.cta_slide(s))
+            elif kind == "text":
+                out.append(self.text_slide(s))
             else:
                 out.append(self.content_slide(s))
         if not out:
