@@ -116,6 +116,37 @@ def _clean_keyword(text: str) -> str:
     return text
 
 
+def briefing_erkennen(text: str, cfg):
+    """Nachricht ohne Expose-Link: Ist es ein Briefing?
+
+    Ein Briefing beginnt mit dem Kuerzel eines Shops, dessen Layout Briefings
+    verarbeitet (slides.layout != "ev"). Alles dahinter ist das Thema. Ein
+    abschliessendes "CTA <wort>" wird als Stichwort gelesen.
+
+    Rueckgabe: (shop_key, thema, stichwort) oder None.
+    """
+    zeilen = text.strip().splitlines()
+    if not zeilen:
+        return None
+    kopf = zeilen[0].split(None, 1)
+    key = _match_shop(kopf[0], shop_alias_map(cfg))
+    if not key:
+        return None
+    if cfg.for_shop(key).get("slides.layout", "ev") == "ev":
+        return None                      # E&V-Shops brauchen einen Link
+    # Zeilenumbrueche bleiben erhalten - das Briefing ist zeilenweise
+    # aufgebaut, ein Zusammenziehen zu einer Zeile wuerde es zerstoeren.
+    rest = "\n".join(([kopf[1]] if len(kopf) > 1 else []) + zeilen[1:]).strip()
+    if len(rest) < 10:                   # zu duenn fuer ein Briefing
+        return None
+    stichwort = ""
+    m = re.search(r"\bCTA\s+([0-9A-Za-zÄÖÜäöüß_-]{2,30})\s*$", rest)
+    if m:
+        stichwort = _clean_keyword(m.group(1))
+        rest = rest[:m.start()].strip().rstrip(",;-")
+    return key, rest, stichwort
+
+
 def _token() -> str:
     tok = os.environ.get("TELEGRAM_BOT_TOKEN")
     if not tok:
@@ -272,6 +303,53 @@ def process(chat_id: int, jobs: list[tuple[str, str]], cfg) -> None:
             send(chat_id, f"❌ Fehler bei {url}\n{str(exc)[:400]}")
 
 
+def process_briefing(chat_id: int, thema: str, stichwort: str, cfg) -> None:
+    """Briefing -> Slides. Gegenstueck zu process(), ohne Scrape und Expose."""
+    from . import bilder as bilder_mod
+    from . import briefing as briefing_mod
+    from .render_heuser import HeuserRenderer
+
+    veroeffentlichen = bool(cfg.get("veroeffentlichen", True))
+    if veroeffentlichen and not blog_id_pruefen(cfg, chat_id):
+        return
+
+    name = cfg.get("brand.shop_name", "den Shop")
+    send(chat_id, f"Alles klar - Briefing für {name}. Ich baue die Slides, "
+                  f"das dauert ein paar Minuten.")
+    try:
+        br = briefing_mod.erzeuge(thema, cfg, keyword=stichwort)
+        slides = bilder_mod.erzeuge_alle(br.slides, cfg)
+        ohne_bild = sum(1 for s in slides if not s.get("photo"))
+
+        out_root = cfg.path(cfg.get("output_dir", "out"))
+        shop_slug = slugify(cfg.get("brand.handle", "shop").lstrip("@"))
+        slug = slugify(br.titel())
+        paths = save_all(HeuserRenderer(cfg).build({"slides": slides}),
+                         out_root / shop_slug / slug, slug)
+        text = br.caption(cfg)
+
+        hinweis = f"\n⚠️ {ohne_bild} Slide(s) ohne Foto." if ohne_bild else ""
+
+        # Solange veroeffentlichen auf false steht, wird nichts eingeplant -
+        # die Slides kommen nur zur Ansicht zurueck. So laesst sich das Design
+        # abstimmen, ohne dass etwas auf dem Profil landet.
+        if not veroeffentlichen:
+            send(chat_id, f"✅ {len(paths)} Slides zur Ansicht (nichts "
+                          f"eingeplant){hinweis}\n\n{text}")
+            send_slides(chat_id, paths)
+            return
+
+        slots = publish_mod.plan_slots(cfg, 1)
+        image_urls = publish_mod.upload_images(paths, cfg)
+        publish_mod.schedule_post(cfg, text, image_urls, slots[0])
+        send(chat_id, f"✅ {name} · {len(paths)} Slides · eingeplant für "
+                      f"{slots[0]:%a %d.%m. %H:%M} Uhr{hinweis}\n\n{text}")
+        send_slides(chat_id, paths)
+    except Exception as exc:                                    # noqa: BLE001
+        traceback.print_exc()
+        send(chat_id, f"❌ Fehler beim Briefing\n{str(exc)[:400]}")
+
+
 def einmal_abholen(cfg, warten: int = 0) -> bool:
     """Ein Durchgang: Nachrichten holen und verarbeiten.
 
@@ -287,6 +365,7 @@ def einmal_abholen(cfg, warten: int = 0) -> bool:
 
     last_id = max(u["update_id"] for u in updates)
     jobs: dict[int, list[str]] = {}
+    briefings: dict[int, list[tuple[str, str, str]]] = {}
 
     for u in updates:
         msg = u.get("message") or u.get("channel_post") or {}
@@ -326,6 +405,10 @@ def einmal_abholen(cfg, warten: int = 0) -> bool:
         found = parse_message(text, shop_alias_map(cfg))
         if found:
             jobs.setdefault(chat_id, []).extend(found)
+            continue
+        brief = briefing_erkennen(text, cfg)
+        if brief:
+            briefings.setdefault(chat_id, []).append(brief)
         elif text.strip():
             send(chat_id, "Darin war kein Exposé-Link von engelvoelkers.com.")
 
@@ -363,6 +446,11 @@ def einmal_abholen(cfg, warten: int = 0) -> bool:
 
             for shop_key, liste in nach_shop.items():
                 process(chat_id, liste, cfg.for_shop(shop_key))
+
+        for chat_id, liste in briefings.items():
+            for shop_key, thema, stichwort in liste:
+                process_briefing(chat_id, thema, stichwort,
+                                 cfg.for_shop(shop_key))
     finally:
         # Nachrichten als abgeholt bestätigen - auch im Fehlerfall, sonst
         # würde derselbe Link beim nächsten Lauf erneut verarbeitet.

@@ -32,21 +32,24 @@ shops:
     aliases: ["heu", "hi"]
     brand:
       shop_name: "Heuser Immobilien"
-      handle: "@___"               # FEHLT NOCH - bestimmt auch den Ausgabeordner
+      handle: "@heuserimmobilien"  # bestimmt auch den Ausgabeordner
     metricool:
       blog_id: "5668636"
-    # false = Slides werden nur gebaut und zur Ansicht geschickt, nichts
-    # eingeplant. Erst auf true stellen, wenn Design und Text abgestimmt sind.
-    veroeffentlichen: false
+      # auto_publish und networks kommen aus den Grundeinstellungen unten:
+      # automatisch veroeffentlichen, Instagram + Facebook + LinkedIn.
+    # true  = Slides werden gebaut UND bei Metricool eingeplant.
+    # false = Slides werden nur gebaut und zur Ansicht nach Telegram geschickt.
+    #         Zum Abstimmen von Design oder Text kurz umstellen.
+    veroeffentlichen: true
     caption:
       hashtags: ["#bonn", "#immobilienbonn", "#heuserimmobilien"]
       cta_template: 'Kommentieren Sie "{keyword}" und wir melden uns bei Ihnen.'
-    fonts:                         # fehlt eine Datei, greift die Ersatzschrift
-      head_regular: "assets/fonts/heuser/Display-Regular.ttf"
-      head_bold:    "assets/fonts/heuser/Display-Bold.ttf"
-      text_regular: "assets/fonts/heuser/Sans-Regular.ttf"
-      text_light:   "assets/fonts/heuser/Sans-Light.ttf"
-      text_bold:    "assets/fonts/heuser/Sans-Medium.ttf"
+    fonts:                         # feine Serif + schlanke Sans
+      head_regular: "assets/fonts/CormorantGaramond-Variable.ttf"
+      head_bold:    "assets/fonts/CormorantGaramond-Variable.ttf"
+      text_regular: "assets/fonts/Jost-Variable.ttf"
+      text_light:   "assets/fonts/Jost-Variable.ttf"
+      text_bold:    "assets/fonts/Jost-Variable.ttf"
     slides:
       layout: "heuser"             # waehlt HeuserRenderer statt Renderer
       palette:                     # aus den Referenz-Slides gemessen
@@ -57,9 +60,28 @@ shops:
         rule: "#A89A8A"
         on_photo: "#FFFFFF"
       bild:
-        provider: ""               # FEHLT NOCH - ohne Provider bleiben Slides ohne Foto
+        provider: "higgsfield"
+        model: "higgsfield-ai/soul/standard"
+        resolution: "720p"         # hoehere Werte erst testen, bevor sie hier stehen
+        aspect_cover: "3:4"        # Cover und CTA sind vollflaechig hochkant
+        aspect_content: "4:3"      # Inhaltsslides zeigen nur ein breites Band
+        timeout_s: 240             # Wartezeit je Bild
         cache: "out/_bilder"
-        stil: ""                   # leer = Vorgabe aus bilder.py
+        # Der Look aller Bilder. Das Sprachmodell liefert nur das Motiv,
+        # der Stil kommt von hier - sonst faellt der Slider auseinander.
+        # Hier nachjustieren, nicht im Code.
+        stil: >
+          Fotorealistische Architektur- und Interieurfotografie im Charakter
+          von Bonn-Bad Godesberg: gepflegte Gruenderzeit- und Nachkriegsvillen,
+          Stuck, hohe Sprossenfenster, Altbau-Parkett und Fischgraet, ruhige
+          Strassen mit alten Laubbaeumen, Vorgaerten mit geschnittenen Hecken
+          und Backsteinmauern, im Hintergrund gelegentlich bewaldete Huegel.
+          Lebendig und bewohnt statt leergeraeumt: warmes Nachmittagslicht mit
+          klaren Schatten, kraeftige aber natuerliche Farben, Pflanzen, Buecher,
+          Textilien, offene Tueren, Blick in angrenzende Raeume.
+          Menschen hoechstens klein, angeschnitten oder von hinten und nie
+          erkennbar. Keine real existierenden Gebaeude nachbilden.
+          Keine Schrift, keine Logos, keine Hausnummern, kein HDR.
 
 # Gilt nur noch, wenn genau EIN Shop konfiguriert ist. Bei mehreren Shops
 # ist das Kuerzel in der Nachricht Pflicht (siehe shop_pflicht).
@@ -97,6 +119,11 @@ slides:
   # Grundstücksfläche, wenn es eine gibt (Häuser), sonst das Baujahr (Wohnungen).
   facts: ["Wohnfläche", "Badezimmer", "Grundstück|Baujahr", "Zimmer"]
   fact_icon: "haken"      # "haken" = ueberall ein Haken | "auto" = eigene Symbole
+
+# === Briefings ===
+# Shops mit layout != "ev" bekommen ihre Slides direkt aus der Telegram-
+# Nachricht. Kein Sprachmodell, keine Erfindung: Was dort steht, steht
+# spaeter auf dem Slide. Format siehe evslider/briefing.py.
 
 caption:
   model: "claude-sonnet-5"

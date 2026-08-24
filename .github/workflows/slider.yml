@@ -39,6 +39,10 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           METRICOOL_USER_TOKEN: ${{ secrets.METRICOOL_USER_TOKEN }}
           METRICOOL_USER_ID: ${{ secrets.METRICOOL_USER_ID }}
+          # Bilderzeugung fuer Briefing-Shops (Heuser). Schluessel anlegen
+          # unter cloud.higgsfield.ai, dann als Repository-Secrets hinterlegen.
+          HIGGSFIELD_API_KEY_ID: ${{ secrets.HIGGSFIELD_API_KEY_ID }}
+          HIGGSFIELD_API_KEY_SECRET: ${{ secrets.HIGGSFIELD_API_KEY_SECRET }}
           # Der Lauf wartet selbst auf Nachrichten, statt einmal nachzusehen
           # und sich zu beenden. Zusammen mit dem 5-Minuten-Zeitplan und der
           # concurrency-Sperre ist der Bot damit fast durchgehend erreichbar.

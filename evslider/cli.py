@@ -7,10 +7,13 @@ import re
 import sys
 from pathlib import Path
 
+from . import bilder as bilder_mod
+from . import briefing as briefing_mod
 from . import caption as caption_mod
 from . import config as config_mod
 from . import publish as publish_mod
 from .render import Renderer, save_all
+from .render_heuser import HeuserRenderer
 from .scrape import scrape
 
 
@@ -71,6 +74,47 @@ def cmd_run(args, cfg):
     print("\n" + json.dumps(results, ensure_ascii=False, indent=2)[:2000])
 
 
+def cmd_brief(args, cfg):
+    """Slider aus einem Briefing statt aus einem Expose."""
+    cfg = cfg.for_shop(args.shop)
+    if cfg.get("slides.layout", "ev") == "ev":
+        print(f"[!] Shop {args.shop!r} nutzt das E&V-Layout und erwartet einen "
+              f"Expose-Link. 'evslider run <url>' benutzen.")
+        return 1
+
+    thema = " ".join(args.text)
+    br = briefing_mod.erzeuge(thema, cfg, keyword=args.keyword or "")
+    print(f"  {len(br.slides)} Slides aus dem Briefing")
+
+    slides = bilder_mod.erzeuge_alle(br.slides, cfg)
+    ohne = sum(1 for s in slides if not s.get("photo"))
+    if ohne:
+        print(f"  [!] {ohne} Slide(s) ohne Foto")
+
+    out_root = cfg.path(cfg.get("output_dir", "out"))
+    shop_slug = slugify(cfg.get("brand.handle", "shop").lstrip("@"))
+    slug = slugify(br.titel())
+    ziel = out_root / shop_slug / slug
+    paths = save_all(HeuserRenderer(cfg).build({"slides": slides}), ziel, slug)
+    print(f"  {len(paths)} Slides → {ziel}")
+
+    text = br.caption(cfg)
+    (ziel / "caption.txt").write_text(text, encoding="utf-8")
+    (ziel / "briefing.json").write_text(
+        json.dumps({"thema": thema, "slides": br.slides},
+                   ensure_ascii=False, indent=2), encoding="utf-8")
+
+    if args.no_schedule:
+        print("  (nichts eingeplant)")
+        return 0
+
+    when = publish_mod.plan_slots(cfg, 1)[0]
+    urls = publish_mod.upload_images(paths, cfg)
+    publish_mod.schedule_post(cfg, text, urls, when, dry_run=args.dry_run)
+    print(f"  {'[dry-run] ' if args.dry_run else ''}geplant für {when:%d.%m.%Y %H:%M}")
+    return 0
+
+
 def cmd_brands(args, cfg):
     print(json.dumps(publish_mod.list_brands(cfg), ensure_ascii=False, indent=2))
 
@@ -94,6 +138,15 @@ def main(argv=None):
     p_probe.add_argument("url")
     p_probe.add_argument("--browser", choices=["auto", "always", "never"], default="auto")
     p_probe.set_defaults(func=cmd_probe)
+
+    p_brief = sub.add_parser("brief", help="Slider aus einem Briefing bauen")
+    p_brief.add_argument("shop", help="Shop-Kürzel, z.B. heuser")
+    p_brief.add_argument("text", nargs="+", help="das Briefing")
+    p_brief.add_argument("--keyword", default="", help="Stichwort für den CTA")
+    p_brief.add_argument("--no-schedule", action="store_true",
+                         help="nur Slides erzeugen, nichts einplanen")
+    p_brief.add_argument("--dry-run", action="store_true")
+    p_brief.set_defaults(func=cmd_brief)
 
     p_brands = sub.add_parser("brands", help="Metricool-Marken/blogIds auflisten")
     p_brands.set_defaults(func=cmd_brands)
