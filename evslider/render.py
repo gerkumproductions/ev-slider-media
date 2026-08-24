@@ -1,277 +1,311 @@
-"""Slides rendern - Layout nach dem E&V-Beispiel-Slider.
+"""Slides rendern - Layout Heuser Immobilien (redaktionelle Info-Slider).
 
-Slide 1  Titelbild, roter Balken links, Headline (Serif), Ortszeile
-Slide 2  Foto oben mit Bildtitel, darunter 2x2-Raster mit Icon/Label/Wert
-Slide 3+ Vollflaechiges Foto mit Bildtitel unten links
+Getrennt von render.py, weil die Datenquelle eine andere ist: Der E&V-Renderer
+baut aus einem gescrapten Expose, dieser hier aus einem Text-Briefing. Gemeinsam
+genutzt werden nur die Hilfsfunktionen aus render.py - Renderer, title_slide,
+facts_slide und photo_slide werden nicht angefasst.
+
+Slide-Typen
+  cover    Vollflaechiges Foto, weisse Typo (Eyebrow / Headline / Subline)
+  content  Cremeflaeche, Eyebrow, Serif-Headline, Haarlinie, Subline, Foto unten
+  cta      wie cover, anderer Text
+
+Maße stammen aus einer Vermessung der Referenz-Slides und liegen relativ in
+GEOM. Abweichungen pro Shop ueber slides.geom in der config.yaml.
 """
 from __future__ import annotations
 
-import io
 from pathlib import Path
 
-import requests
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageChops, ImageDraw, ImageFilter
 
-from . import icons as icon_mod
-from .fonts import FontSet
-from .scrape import Expose, saubere_beschriftung
+from .render import cover, fit_text, hexc, wrap
 
-UA = {"User-Agent": "Mozilla/5.0"}
+# ---------- Maße, relativ zur Canvas-Hoehe (bzw. -Breite bei *_width) ----------
 
+GEOM = {
+    "eyebrow_top": 0.129,
+    "eyebrow_size": 0.0225,
+    "eyebrow_track": 0.26,        # em
+    "headline_top": 0.183,
+    "headline_size": 0.077,
+    "headline_leading": 1.03,
+    "rule_gap_above": 0.053,
+    "rule_gap_below": 0.053,
+    "rule_width": 0.66,           # Anteil der Breite
+    "rule_thickness": 2,
+    "body_size": 0.0295,
+    "body_leading": 1.42,
+    "photo_top": 0.525,
+    "photo_min_gap": 0.055,       # Mindestabstand Subline -> Fotokante
+    "photo_fade": 0.16,           # Ausblendhoehe, Anteil der Fotohoehe
+    "photo_inset_side": 0.11,     # Rand bei photo_inset
+    "side_margin": 0.10,
+    "cover_eyebrow_top": 0.150,
+    "cover_headline_top": 0.183,
+    "cover_headline_size": 0.105,
+    "cover_sub_gap": 0.082,
+    # Textseite: Fliesstext statt Schlagzeile
+    "text_top": 0.115,
+    "text_size": 0.0335,
+    "text_leading": 1.55,
+    "text_absatz": 0.55,          # Zusatzabstand zwischen Absaetzen, in Zeilen
+    "cover_scrim": 82,            # Alpha des Schleiers oben, 0 = aus
+    "cover_scrim_band": 0.48,
+}
 
-# ---------- Hilfsfunktionen ----------
-
-def hexc(h: str) -> tuple[int, int, int]:
-    h = h.lstrip("#")
-    return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))  # type: ignore
-
-
-def download(url: str, timeout: int = 60) -> Image.Image:
-    r = requests.get(url, headers=UA, timeout=timeout)
-    r.raise_for_status()
-    return Image.open(io.BytesIO(r.content)).convert("RGB")
-
-
-def cover(img: Image.Image, w: int, h: int) -> Image.Image:
-    ratio = max(w / img.width, h / img.height)
-    nw, nh = int(img.width * ratio + 1), int(img.height * ratio + 1)
-    img = img.resize((nw, nh), Image.LANCZOS)
-    return img.crop(((nw - w) // 2, (nh - h) // 3,
-                     (nw - w) // 2 + w, (nh - h) // 3 + h))
-
-
-def gradient(w: int, h: int, frac: float = 0.42, end: float = 0.62) -> Image.Image:
-    """Dezenter Verlauf im unteren Bildteil - nur so viel, dass Text lesbar bleibt."""
-    grad = Image.new("L", (1, h))
-    start_y = int(h * (1 - frac))
-    for y in range(h):
-        if y < start_y:
-            grad.putpixel((0, y), 0)
-        else:
-            t = (y - start_y) / max(h - start_y - 1, 1)
-            grad.putpixel((0, y), int(255 * end * (t ** 1.5)))
-    layer = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-    layer.putalpha(grad.resize((w, h)))
-    return layer
-
-
-def wrap(draw, text: str, font, max_w: int) -> list[str]:
-    lines, cur = [], ""
-    for word in text.split():
-        trial = f"{cur} {word}".strip()
-        if draw.textlength(trial, font=font) <= max_w or not cur:
-            cur = trial
-        else:
-            lines.append(cur)
-            cur = word
-    if cur:
-        lines.append(cur)
-    return lines
+PALETTE = {
+    "bg": "#F5F0E8",
+    "accent": "#90806D",
+    "headline": "#2B2721",
+    "body": "#3D3933",
+    "rule": "#A89A8A",
+    "on_photo": "#FFFFFF",
+}
 
 
-def fit_text(draw, text, font_factory, max_w, max_lines, start, min_size):
-    size = start
-    while size > min_size:
-        f = font_factory(size)
-        lines = wrap(draw, text, f, max_w)
-        if len(lines) <= max_lines:
-            return f, lines
-        size -= 3
-    f = font_factory(min_size)
-    return f, wrap(draw, text, f, max_w)[:max_lines]
+def fade_mask(w: int, h: int, fade: float, inset: bool = False) -> Image.Image:
+    """Alphamaske: Oberkante weich auslaufend, bei inset auch Seiten und Unterkante.
+
+    Der Exponent 1.4 ist der Unterschied zwischen 'sichtbarer Verlauf' und
+    'Foto schmilzt in die Flaeche' - linear sieht nach Verlauf aus.
+    """
+    mask = Image.new("L", (w, h), 255)
+    md = ImageDraw.Draw(mask)
+    n = max(int(h * fade), 1)
+    for i in range(n):
+        md.line([(0, i), (w, i)], fill=int(255 * (i / n) ** 1.4))
+    if inset:
+        side = max(int(w * 0.05), 1)
+        edge = Image.new("L", (w, h), 255)
+        ed = ImageDraw.Draw(edge)
+        for i in range(side):
+            a = int(255 * (i / side))
+            ed.line([(i, 0), (i, h)], fill=a)
+            ed.line([(w - 1 - i, 0), (w - 1 - i, h)], fill=a)
+            ed.line([(0, h - 1 - i), (w, h - 1 - i)], fill=a)
+        edge = edge.filter(ImageFilter.GaussianBlur(8))
+        mask = ImageChops.darker(mask, edge)
+    return mask
 
 
-def tracked(draw, text, font, x, y, fill, spacing: float):
-    """Text mit erhoehter Laufweite (Labels auf der Faktenseite)."""
-    for ch in text:
-        draw.text((x, y), ch, font=font, fill=fill)
-        x += draw.textlength(ch, font=font) + spacing
-    return x
+class HeuserRenderer:
+    """Einstieg: HeuserRenderer(cfg).build(briefing) -> list[Image]"""
 
+    layout = "heuser"
 
-def tracked_width(draw, text, font, spacing: float) -> float:
-    return sum(draw.textlength(c, font=font) + spacing for c in text) - spacing
-
-
-def fact_key(label: str) -> str:
-    """'Wohnfläche' -> 'wohnflaeche'. Umlaute VOR jeder Normalisierung ersetzen."""
-    s = label.lower()
-    for a, b in (("ä", "ae"), ("ö", "oe"), ("ü", "ue"), ("ß", "ss")):
-        s = s.replace(a, b)
-    return "".join(c for c in s if c.isalnum())
-
-
-# ---------- Renderer ----------
-
-class Renderer:
     def __init__(self, cfg):
+        from .fonts import FontSet
         self.cfg = cfg
         self.f = FontSet(cfg)
         self.W = cfg.get("slides.width", 1080)
         self.H = cfg.get("slides.height", 1350)
-        self.red = hexc(cfg.get("brand.red", "#C8102E"))
-        self.dark = hexc(cfg.get("brand.dark", "#1A1A1A"))
-        self.light = hexc(cfg.get("brand.light", "#FFFFFF"))
-        self.M = int(self.W * 0.072)          # Aussenrand ~78 px
+        self.g = dict(GEOM)
+        self.g.update(cfg.get("slides.geom", {}) or {})
+        pal = dict(PALETTE)
+        pal.update(cfg.get("slides.palette", {}) or {})
+        self.c = {k: hexc(v) for k, v in pal.items()}
+        self.M = int(self.W * self.g["side_margin"])
 
-    # -- Slide 1: Titel --
-    def title_slide(self, ex: Expose, photo: Image.Image) -> Image.Image:
-        canvas = cover(photo, self.W, self.H).convert("RGBA")
-        canvas.alpha_composite(gradient(self.W, self.H, frac=0.46, end=0.58))
+    # ---------- Slides ----------
+
+    def cover_slide(self, s: dict) -> Image.Image:
+        canvas = self._full_bleed(s.get("photo"))
         d = ImageDraw.Draw(canvas)
+        g, col = self.g, self.c["on_photo"]
+        inner = self.W - 2 * self.M
 
-        text_x = self.M + 34
-        max_w = self.W - text_x - self.M
-        fh, lines = fit_text(d, ex.title, self.f.H, max_w, 5, 62, 40)
-        lh = int(fh.size * 1.20)
+        if s.get("eyebrow"):
+            f = self.f.T(int(self.H * g["eyebrow_size"]))
+            self._tracked_centered(d, s["eyebrow"].upper(), f,
+                                   self.H * g["cover_eyebrow_top"], col)
 
-        loc = self.location_line(ex)
-        f_loc = self.f.Tl(36)
-        loc_h = int(f_loc.size * 1.4) if loc else 0
-
-        block_h = lh * len(lines) + (loc_h + 18 if loc else 0)
-        y0 = self.H - self.M - block_h
-
-        # roter Balken links
-        d.rectangle([self.M, y0 - 8, self.M + 6, y0 + block_h + 6], fill=self.red)
-
-        y = y0
+        y = self.H * g["cover_headline_top"]
+        fh, lines = self._fit_headline(d, s["headline"].upper(),
+                                       g["cover_headline_size"], inner, 2)
         for line in lines:
-            d.text((text_x, y), line, font=fh, fill=self.light)
-            y += lh
-        if loc:
-            d.text((text_x, y + 18), loc, font=f_loc, fill=self.light)
+            self._centered(d, line, fh, y, col)
+            y += fh.size * 0.98
+
+        if s.get("subline"):
+            f = self.f.T(int(self.H * g["eyebrow_size"]))
+            self._tracked_centered(d, s["subline"].upper(), f,
+                                   y + self.H * g["cover_sub_gap"], col)
         return canvas.convert("RGB")
 
-    # Bundeslaender stehen bei jedem Objekt gleich da und bringen nichts.
-    BUNDESLAENDER = {
-        "baden-württemberg", "bayern", "berlin", "brandenburg", "bremen",
-        "hamburg", "hessen", "mecklenburg-vorpommern", "niedersachsen",
-        "nordrhein-westfalen", "rheinland-pfalz", "saarland", "sachsen",
-        "sachsen-anhalt", "schleswig-holstein", "thüringen",
-    }
+    cta_slide = cover_slide
 
-    @classmethod
-    def location_line(cls, ex: Expose) -> str:
-        """'Siegburg, Nordrhein-Westfalen' -> 'Siegburg'
-           'Wiemelhausen, Bochum'          -> 'Bochum Wiemelhausen'"""
-        if not ex.location:
-            return ""
-        parts = [p.strip() for p in ex.location.split(",") if p.strip()]
-        parts = [p for p in parts if p.lower() not in cls.BUNDESLAENDER]
-        if not parts:
-            return ""
-        return " ".join(reversed(parts[:2]))
-
-    # -- Slide 2: Fakten --
-    def facts_slide(self, ex: Expose, photo: Image.Image | None,
-                    photo_caption: str = "") -> Image.Image:
-        canvas = Image.new("RGB", (self.W, self.H), self.light)
+    def content_slide(self, s: dict) -> Image.Image:
+        canvas = Image.new("RGB", (self.W, self.H), self.c["bg"])
         d = ImageDraw.Draw(canvas)
-        y = self.M
+        g = self.g
+        inner = self.W - 2 * self.M
 
-        # Letzte Sicherung: eine Bedienbeschriftung darf hier nicht mehr
-        # ankommen, aber falls doch, wird sie nicht gezeichnet.
-        photo_caption = saubere_beschriftung(photo_caption)
+        if s.get("eyebrow"):
+            f = self.f.T(int(self.H * g["eyebrow_size"]))
+            self._tracked_centered(d, s["eyebrow"].upper(), f,
+                                   self.H * g["eyebrow_top"], self.c["accent"])
 
-        if photo is not None:
-            pw = self.W - 2 * self.M
-            ph = int(pw * 0.62)
-            block = cover(photo, pw, ph).convert("RGBA")
-            if photo_caption:
-                block.alpha_composite(gradient(pw, ph, frac=0.34, end=0.55))
-                bd = ImageDraw.Draw(block)
-                fc, lines = fit_text(bd, photo_caption, self.f.T, pw - 60, 1, 32, 22)
-                bd.text((30, ph - 30 - fc.size * 1.2), lines[0], font=fc, fill=self.light)
-            canvas.paste(block.convert("RGB"), (self.M, y))
-            y += ph
+        y = self.H * g["headline_top"]
+        fh, lines = self._fit_headline(d, s["headline"], g["headline_size"], inner, 3)
+        lh = fh.size * g["headline_leading"]
+        for line in lines:
+            self._centered(d, line, fh, y, self.c["headline"])
+            y += lh
+        y -= lh - fh.size * 0.95
 
-        facts = ex.facts(self.cfg.get("slides.facts"))[:4]
-        if not facts:
-            return canvas
+        y += self.H * g["rule_gap_above"]
+        rw = self.W * g["rule_width"]
+        d.rectangle([(self.W - rw) / 2, y,
+                     (self.W + rw) / 2, y + g["rule_thickness"] - 1],
+                    fill=self.c["rule"])
+        y += self.H * g["rule_gap_below"]
 
-        grid_top = y + 62
-        cell_h = (self.H - grid_top - self.M) // 2
-        col_w = self.W // 2
-        f_label = self.f.T(28)
-        icon_px = 62
+        if s.get("subline"):
+            fb = self.f.T(int(self.H * g["body_size"]))
+            for line in wrap(d, s["subline"], fb, inner * 0.92):
+                self._centered(d, line, fb, y, self.c["body"])
+                y += fb.size * g["body_leading"]
 
-        for i, (label, value) in enumerate(facts):
-            cx = col_w * (i % 2) + col_w // 2
-            cy = grid_top + cell_h * (i // 2)
-
-            # slides.fact_icon: "haken" = überall derselbe Haken,
-            # "auto" = je Fakt ein eigenes Symbol
-            gewaehlt = self.cfg.get("slides.fact_icon", "haken")
-            schluessel = fact_key(label) if gewaehlt == "auto" else gewaehlt
-            ic = icon_mod.icon(schluessel, icon_px, self.dark, self.cfg)
-            if ic is not None:
-                canvas.paste(ic, (cx - ic.width // 2, cy), ic)
-
-            ly = cy + icon_px + 26
-            lw = tracked_width(d, label, f_label, 2.5)
-            tracked(d, label, f_label, cx - lw / 2, ly, self.dark, 2.5)
-
-            fv, vlines = fit_text(d, value, self.f.H, col_w - 70, 1, 60, 32)
-            vw = d.textlength(vlines[0], font=fv)
-            d.text((cx - vw / 2, ly + 48), vlines[0], font=fv, fill=self.dark)
+        if s.get("photo"):
+            top = int(max(self.H * g["photo_top"], y + self.H * g["photo_min_gap"]))
+            self._place_photo(canvas, s["photo"], top, s.get("photo_inset", False))
         return canvas
 
-    # -- Slide 3+: Foto mit Bildtitel --
-    def photo_slide(self, photo: Image.Image, caption: str) -> Image.Image:
-        canvas = cover(photo, self.W, self.H).convert("RGBA")
-        caption = saubere_beschriftung(caption)
-        if caption:
-            canvas.alpha_composite(gradient(self.W, self.H, frac=0.30, end=0.55))
-            d = ImageDraw.Draw(canvas)
-            f, lines = fit_text(d, caption, self.f.T, self.W - 2 * self.M, 2, 38, 26)
-            lh = int(f.size * 1.3)
-            y = self.H - self.M - lh * len(lines)
-            for line in lines:
-                d.text((self.M, y), line, font=f, fill=self.light)
+    def text_slide(self, s: dict) -> Image.Image:
+        """Seite mit Fliesstext: keine Schlagzeile, dafuer Platz zum Lesen.
+
+        Fuer Briefings, die einen Gedanken ausformulieren statt ihn auf drei
+        Woerter einzudampfen. Absaetze werden mit || getrennt.
+        """
+        canvas = Image.new("RGB", (self.W, self.H), self.c["bg"])
+        d = ImageDraw.Draw(canvas)
+        g = self.g
+        inner = self.W - 2 * self.M
+
+        y = self.H * g["text_top"]
+        if s.get("eyebrow"):
+            f = self.f.T(int(self.H * g["eyebrow_size"]))
+            self._tracked_centered(d, s["eyebrow"].upper(), f, y, self.c["accent"])
+            y += self.H * 0.045
+
+        fb = self.f.T(int(self.H * g["text_size"]))
+        lh = fb.size * g["text_leading"]
+        absaetze = [a.strip() for a in s.get("subline", "").split("||") if a.strip()]
+        for i, absatz in enumerate(absaetze):
+            for zeile in wrap(d, absatz, fb, inner):
+                self._centered(d, zeile, fb, y, self.c["body"])
                 y += lh
-        return canvas.convert("RGB")
+            if i < len(absaetze) - 1:
+                y += lh * g["text_absatz"]
 
-    # -- Slider zusammenbauen --
-    def build(self, ex: Expose, images: list[Image.Image] | None = None) -> list[Image.Image]:
-        max_total = self.cfg.get("slides.max_total", 10)
-        needed = max_total
-        if images is None:
-            images = [download(p.url) for p in ex.photos[:needed]]
-        if not images:
-            raise RuntimeError("Keine Bilder gefunden.")
+        if s.get("photo"):
+            top = int(y + self.H * g["photo_min_gap"])
+            if self.H - top > self.H * 0.12:      # nur wenn noch Platz bleibt
+                self._place_photo(canvas, s["photo"], top,
+                                  s.get("photo_inset", False))
+        return canvas
 
-        def cap(i: int) -> str:
-            """Vorrang: Bildunterschrift der Website, dann erzeugter Titel.
+    # ---------- Bausteine ----------
 
-            Beides wird gefiltert: Beschriftungen von Bedienelementen wie
-            "go to next image" gehoeren nicht ins Bild. Bleibt nichts uebrig,
-            wird das Slide ohne Titel gezeichnet - ganz ohne Balken.
-            """
-            if i < len(ex.photos):
-                p = ex.photos[i]
-                return (saubere_beschriftung(p.caption)
-                        or saubere_beschriftung(p.title)
-                        or "")
-            return ""
+    def _place_photo(self, canvas, photo, top: int, inset: bool):
+        g = self.g
+        if inset:
+            pw = int(self.W * (1 - 2 * g["photo_inset_side"]))
+            ph = self.H - top - int(self.H * 0.03)
+        else:
+            pw, ph = self.W, self.H - top
+        if ph <= 0:
+            return
+        block = cover(self._as_image(photo), pw, ph)
+        canvas.paste(block, ((self.W - pw) // 2, top),
+                     fade_mask(pw, ph, g["photo_fade"], inset))
 
-        slides = [self.title_slide(ex, images[0])]
-        # Slide 2 nutzt das zweite Foto als Aufmacher
-        second = images[1] if len(images) > 1 else images[0]
-        slides.append(self.facts_slide(ex, second, cap(1) if len(images) > 1 else ""))
+    def _full_bleed(self, photo) -> Image.Image:
+        if not photo:
+            return Image.new("RGBA", (self.W, self.H), self.c["bg"] + (255,))
+        canvas = cover(self._as_image(photo), self.W, self.H).convert("RGBA")
+        alpha = self.g["cover_scrim"]
+        if alpha:
+            band = int(self.H * self.g["cover_scrim_band"])
+            scrim = Image.new("RGBA", (self.W, self.H), (58, 52, 43, 0))
+            m = Image.new("L", (self.W, self.H), 0)
+            md = ImageDraw.Draw(m)
+            for i in range(band):
+                md.line([(0, i), (self.W, i)], fill=int(alpha * (1 - i / band) ** 1.1))
+            scrim.putalpha(m)
+            canvas.alpha_composite(scrim)
+        return canvas
 
-        for i, img in enumerate(images[2:], start=2):
-            if len(slides) >= max_total:
+    @staticmethod
+    def _as_image(p) -> Image.Image:
+        return p if isinstance(p, Image.Image) else Image.open(p).convert("RGB")
+
+    def _fit_headline(self, d, text, rel_size, max_w, max_lines):
+        """`|` erzwingt Umbruch, `~` markiert eine erlaubte Trennstelle."""
+        if "|" in text:
+            segs = [t.strip().replace("~", "") for t in text.split("|")]
+            size = int(self.H * rel_size)
+            while size > 30 and any(d.textlength(t, font=self.f.H(size)) > max_w
+                                    for t in segs):
+                size -= 2
+            return self.f.H(size), segs
+        text = self._soft_hyphen(d, text, max_w, int(self.H * rel_size))
+        return fit_text(d, text, self.f.H, max_w, max_lines,
+                        int(self.H * rel_size), 30)
+
+    def _soft_hyphen(self, d, text, max_w, size) -> str:
+        f = self.f.H(size)
+        out = []
+        for w in text.split():
+            if "~" in w and d.textlength(w.replace("~", ""), font=f) > max_w * 0.55:
+                head, tail = w.split("~", 1)
+                out += [head + "-", tail]
+            else:
+                out.append(w.replace("~", ""))
+        return " ".join(out)
+
+    def _centered(self, d, text, font, y, fill):
+        w = d.textlength(text, font=font)
+        d.text(((self.W - w) / 2, y), text, font=font, fill=fill)
+
+    def _tracked_centered(self, d, text, font, y, fill):
+        """Gesperrter Text, zentriert. PIL kennt kein letter-spacing, also
+        zeichenweise mit Vorschub - und so lange verkleinert, bis die Zeile
+        in die Textspalte passt."""
+        if not text:
+            return
+        max_w = self.W - 2 * self.M
+        groesse = font.size
+        while groesse > 12:
+            f = self.f.T(groesse)
+            sp = f.size * self.g["eyebrow_track"]
+            widths = [d.textlength(c, font=f) for c in text]
+            gesamt = sum(widths) + sp * (len(text) - 1)
+            if gesamt <= max_w:
                 break
-            slides.append(self.photo_slide(img, cap(i)))
-        return slides
+            groesse -= 1
+        x = (self.W - gesamt) / 2
+        for c, w in zip(text, widths):
+            d.text((x, y), c, font=f, fill=fill)
+            x += w + sp
 
+    # ---------- Slider zusammenbauen ----------
 
-def save_all(slides: list[Image.Image], out_dir: Path, slug: str) -> list[Path]:
-    out_dir.mkdir(parents=True, exist_ok=True)
-    paths = []
-    for i, s in enumerate(slides, 1):
-        p = out_dir / f"{slug}_{i:02d}.jpg"
-        s.save(p, "JPEG", quality=92, optimize=True)
-        paths.append(p)
-    return paths
+    def build(self, briefing: dict) -> list[Image.Image]:
+        """briefing: {"slides": [{kind, eyebrow, headline, subline, photo}, ...]}"""
+        max_total = self.cfg.get("slides.max_total", 10)
+        out = []
+        for s in briefing.get("slides", [])[:max_total]:
+            kind = s.get("kind", "content")
+            if kind == "cover":
+                out.append(self.cover_slide(s))
+            elif kind == "cta":
+                out.append(self.cta_slide(s))
+            elif kind == "text":
+                out.append(self.text_slide(s))
+            else:
+                out.append(self.content_slide(s))
+        if not out:
+            raise RuntimeError("Briefing enthaelt keine Slides.")
+        return out
