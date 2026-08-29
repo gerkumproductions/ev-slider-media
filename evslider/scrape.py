@@ -46,8 +46,10 @@ UI_TEXT_RE = re.compile(
 # Nachbarschaft). Deren Zahlen dürfen nie in unseren Datensatz geraten:
 # Eine Wohnung ohne Grundstück erbt sonst die Fläche des Nachbarobjekts.
 FREMDE_OBJEKTE_RE = re.compile(
-    r"Objekte in der N[äa]he|[ÄA]hnliche Objekte|Weitere Objekte"
-    r"|Das k[öo]nnte Sie auch interessieren|Ihre n[äa]chsten Schritte",
+    r"Objekte in der N[äa]he"
+    r"|k[öo]nnten Sie ebenfalls interessieren"
+    r"|k[öo]nnte Sie auch interessieren"
+    r"|[ÄA]hnliche Objekte|Weitere Objekte|Das k[öo]nnte Ihnen gefallen",
     re.IGNORECASE)
 
 
@@ -57,10 +59,12 @@ def eigener_text(html: str, soup: BeautifulSoup) -> str:
     Gleiche Logik wie bei den Bildern in _photos_from_dom - dort war der
     Schnitt schon drin, bei den Fakten fehlte er.
     """
-    m = FREMDE_OBJEKTE_RE.search(html)
-    if not m:
-        return soup.get_text("\n", strip=True)
-    return BeautifulSoup(html[:m.start()], "html.parser").get_text("\n", strip=True)
+    # Bewusst im ausgelesenen Text suchen, nicht im rohen HTML: Dort koennen
+    # Umlaute als Entity stehen (&auml;) oder der Satz durch Tags zerteilt
+    # sein - beides laesst ein Muster ins Leere laufen.
+    text = soup.get_text("\n", strip=True)
+    m = FREMDE_OBJEKTE_RE.search(text)
+    return text[:m.start()] if m else text
 
 
 def saubere_beschriftung(text: str) -> str:
