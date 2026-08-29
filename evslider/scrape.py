@@ -42,6 +42,27 @@ UI_TEXT_RE = re.compile(
     re.IGNORECASE)
 
 
+# Ab hier beginnen auf der Exposé-Seite fremde Objekte (Empfehlungen,
+# Nachbarschaft). Deren Zahlen dürfen nie in unseren Datensatz geraten:
+# Eine Wohnung ohne Grundstück erbt sonst die Fläche des Nachbarobjekts.
+FREMDE_OBJEKTE_RE = re.compile(
+    r"Objekte in der N[äa]he|[ÄA]hnliche Objekte|Weitere Objekte"
+    r"|Das k[öo]nnte Sie auch interessieren|Ihre n[äa]chsten Schritte",
+    re.IGNORECASE)
+
+
+def eigener_text(html: str, soup: BeautifulSoup) -> str:
+    """Seitentext bis zum ersten Block mit fremden Objekten.
+
+    Gleiche Logik wie bei den Bildern in _photos_from_dom - dort war der
+    Schnitt schon drin, bei den Fakten fehlte er.
+    """
+    m = FREMDE_OBJEKTE_RE.search(html)
+    if not m:
+        return soup.get_text("\n", strip=True)
+    return BeautifulSoup(html[:m.start()], "html.parser").get_text("\n", strip=True)
+
+
 def saubere_beschriftung(text: str) -> str:
     """Leere Zeichenkette, wenn der Text eine Bedienbeschriftung ist."""
     t = (text or "").strip()
@@ -130,6 +151,14 @@ class Expose:
             "Energieklasse": self.energy_class,
             "Objektart": self.property_type,
         }
+
+        # Zweite Sicherung: Eine Eigentumswohnung hat keine eigene
+        # Grundstuecksflaeche. Steht dort trotzdem ein Wert, ist er falsch -
+        # egal aus welcher Quelle er stammt.
+        WOHNUNG = ("wohnung", "etw", "apartment", "penthouse", "maisonette",
+                   "loft", "studio")
+        if any(w in (self.property_type or "").lower() for w in WOHNUNG):
+            available["Grundstück"] = ""
         order = wanted or ["Wohnfläche", "Badezimmer", "Grundstück|Baujahr", "Zimmer"]
 
         out: list[tuple[str, str]] = []
@@ -280,7 +309,10 @@ def parse(html: str, url: str) -> Expose:
     ogd = soup.find("meta", property="og:description")
     ex.description = (ogd.get("content") if ogd else "").strip()
 
-    text = soup.get_text("\n", strip=True)
+    # Nur der eigene Teil der Seite. Alles ab "Objekte in der Nähe" gehoert
+    # anderen Immobilien und wird fuer die Faktenerkennung ausgeblendet.
+    text = eigener_text(html, soup)
+    voller_text = soup.get_text("\n", strip=True)
 
     m = re.search(r"Engel & Völkers ID:\s*([A-Z0-9-]+)", text)
     ex.ev_id = m.group(1) if m else ""
@@ -306,6 +338,20 @@ def parse(html: str, url: str) -> Expose:
     ex.agent = m.group(1).strip() if m else ""
     m = re.search(r"(Engel & Völkers [A-ZÄÖÜ][\wäöüß\- ]+)", text)
     ex.shop = m.group(1).strip() if m else ""
+
+    # Shop, Makler und ID stehen je nach Layout unterhalb des Schnitts. Sie
+    # sind ungefaehrlich, weil sie zum Inserat und nicht zum Nachbarobjekt
+    # gehoeren - deshalb hier ein Nachschlag im vollen Text, aber ausdruecklich
+    # NICHT fuer Flaechen, Preise und Zimmerzahlen.
+    if not ex.ev_id:
+        m = re.search(r"Engel & Völkers ID:\s*([A-Z0-9-]+)", voller_text)
+        ex.ev_id = m.group(1) if m else ""
+    if not ex.agent:
+        m = re.search(r"Ihr:e Expert:in:\s*([^\n]+)", voller_text)
+        ex.agent = m.group(1).strip() if m else ""
+    if not ex.shop:
+        m = re.search(r"(Engel & Völkers [A-ZÄÖÜ][\wäöüß\- ]+)", voller_text)
+        ex.shop = m.group(1).strip() if m else ""
 
     ex.property_type = _label_value(soup, "Objektart")
     ex.floor = _label_value(soup, "Etage")
