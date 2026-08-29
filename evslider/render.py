@@ -122,7 +122,8 @@ class Renderer:
 
         text_x = self.M + 34
         max_w = self.W - text_x - self.M
-        fh, lines = fit_text(d, ex.title, self.f.H, max_w, 5, 62, 40)
+        # Head Bold wie im E&V-Original - Regular wirkt auf dem Foto zu zart.
+        fh, lines = fit_text(d, ex.title, self.f.Hb, max_w, 5, 62, 40)
         lh = int(fh.size * 1.20)
 
         loc = self.location_line(ex)
@@ -212,7 +213,9 @@ class Renderer:
             lw = tracked_width(d, label, f_label, 2.5)
             tracked(d, label, f_label, cx - lw / 2, ly, self.dark, 2.5)
 
-            fv, vlines = fit_text(d, value, self.f.H, col_w - 70, 1, 60, 32)
+            # Zahlenwerte ebenfalls Head Bold, damit sie gegen die
+            # gesperrten Labels darueber bestehen.
+            fv, vlines = fit_text(d, value, self.f.Hb, col_w - 70, 1, 60, 32)
             vw = d.textlength(vlines[0], font=fv)
             d.text((cx - vw / 2, ly + 48), vlines[0], font=fv, fill=self.dark)
         return canvas
