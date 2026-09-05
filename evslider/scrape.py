@@ -145,8 +145,10 @@ class Expose:
         Häusern die Fläche und bei Wohnungen das Baujahr, ohne zwei
         Konfigurationen pflegen zu müssen.
         """
+        # Kaufpreis steht hier bewusst NICHT drin. Preise gehoeren nie auf ein
+        # Slide - weder ueber die facts-Liste in der config.yaml noch ueber das
+        # Auffuellen weiter unten. Preis gibt es nur im Expose per WhatsApp.
         available = {
-            "Kaufpreis": self.price,
             "Wohnfläche": self.living_area,
             "Zimmer": self.rooms,
             "Badezimmer": self.bathrooms,
@@ -164,6 +166,9 @@ class Expose:
         if any(w in (self.property_type or "").lower() for w in WOHNUNG):
             available["Grundstück"] = ""
         order = wanted or ["Wohnfläche", "Badezimmer", "Grundstück|Baujahr", "Zimmer"]
+        if any("preis" in str(e).lower() for e in order):
+            print("[i] 'Kaufpreis' in slides.facts wird ignoriert - Preise "
+                  "gehoeren nicht auf Slides.")
 
         out: list[tuple[str, str]] = []
         vergeben: set[str] = set()
