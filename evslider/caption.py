@@ -22,7 +22,16 @@ dritten Person und nie so, als würdest du ein fremdes Angebot weiterempfehlen.
 
 Tonalität: hochwertig, klar, zurückhaltend - kein Werbe-Superlativ, keine Emojis
 in den Bildtiteln, keine erfundenen Fakten. Du antwortest ausschließlich mit
-gültigem JSON, ohne Markdown-Backticks und ohne Vorrede."""
+gültigem JSON, ohne Markdown-Backticks und ohne Vorrede.
+
+TABU - gilt für hook, body, image_titles und hashtags, ohne Ausnahme:
+- Nichts zum Preis. Keine Zahl, kein "auf Anfrage", kein "VB", keine
+  Preisspanne, kein "erschwinglich", "günstig", "Budget", "Investment-Preis"
+  oder sonstige Andeutung. Das Wort "Preis" kommt nicht vor.
+- Keine Straße, keine Hausnummer, keine E&V-ID (W-XXXXXX), keine Flurstücke.
+  Stadt und Ortsteil sind erlaubt, z.B. "in Niederwenigern" oder "am
+  Ortsrand von Hattingen" - aber nie "in der Essener Straße 23".
+Preis und Adresse gibt es ausschließlich im Exposé per WhatsApp."""
 
 PROMPT = """Objektdaten:
 {data}
@@ -47,7 +56,7 @@ Erzeuge:
    Steht im Datensatz "vorgegebenes_cta_stichwort", nutze genau dieses.
 4. "hook": eine einzelne Zeile als Aufhaenger, max. 90 Zeichen, ohne Hashtags.
 5. "body": 3-5 Saetze zum Objekt und zur Lage, als Fliesstext. Maximal 2 dezente Emojis.
-   Keine Preisangabe erfinden - nur nutzen, wenn im Objektdatensatz vorhanden.
+   Kein Preis, keine Strasse, keine Hausnummer (siehe TABU oben).
    KEIN Call-to-Action im body, der wird separat gesetzt.
 6. "hashtags": 8-12 passende Hashtags auf Deutsch/Englisch inkl. Ort und Objektart.
 
@@ -90,14 +99,13 @@ def generate(ex, cfg, keyword: str | None = None) -> dict:
         for p in ex.photos:
             if not p.caption:
                 p.title = p.alt[:60]
-        return {"hook": ex.title, "body": ex.description,
+        return {"hook": _bereinigen(ex.title), "body": _bereinigen(ex.description),
                 "keyword": keyword or _fallback_keyword(ex),
                 "hashtags": cfg.get("caption.hashtags", [])}
 
     payload = {
         "titel": ex.title,
         "ort": ex.location,
-        "preis": ex.price,
         "zimmer": ex.rooms,
         "wohnflaeche": ex.living_area,
         "baujahr": ex.year_built,
@@ -139,14 +147,53 @@ def generate(ex, cfg, keyword: str | None = None) -> dict:
     else:
         ex.photos = _ohne_werbung(ex.photos, out.get("ausschliessen", []))
 
+    hashtags = [t for t in (out.get("hashtags") or cfg.get("caption.hashtags", []))
+                if not _verboten(str(t))]
+
     return {
-        "hook": out.get("hook", ex.title).strip(),
-        "body": out.get("body", "").strip(),
+        "hook": _bereinigen(out.get("hook", ex.title)),
+        "body": _bereinigen(out.get("body", "")),
         "keyword": keyword or re.sub(r"[^A-Z0-9]", "",
                                      (out.get("keyword") or "").upper())
                    or _fallback_keyword(ex),
-        "hashtags": out.get("hashtags") or cfg.get("caption.hashtags", []),
+        "hashtags": hashtags,
     }
+
+
+# Harte Sperre fuer Preis und Adresse
+# Der Prompt verbietet beides - aber die KI haelt sich nicht immer daran, und
+# der Fallback ohne API-Key nimmt den Website-Text ungefiltert. Deshalb wird
+# jeder Satz, der einen Preis oder eine Strasse enthaelt, entfernt, bevor er
+# in die Caption kommt. Lieber ein Satz weniger als eine Zahl zu viel.
+_STR = r"(?:[\wäöüß]+\s+)?[\wäöüß]*(?:straße|strasse|str\.|weg|allee|platz|gasse|ring|damm|ufer|chaussee|promenade)"
+_VERBOTEN = re.compile(
+    r"(?i)("
+    r"€|\beur\b|euro|preis|\bvb\b|verhandlungsbasis|auf anfrage|erschwinglich|"
+    r"g[üu]nstig|budget|kosten|kaufsumme|"
+    r"\bW-[A-Z0-9]{5,8}\b|"                                        # E&V-ID
+    r"\b\d{1,3}(?:\.\d{3})+(?:,\d+)?\b(?!\s*(?:m²|m2|qm|m\b))|"   # 699.000, aber nicht 1.816 m²
+    r"\b" + _STR + r"\s+\d{1,4}[a-z]?\b|"                            # Essener Straße 23
+    r"\b(?:in der|an der|auf der|im|am)\s+" + _STR + r"\b|"         # in der Essener Straße
+    r"\b[\wäöüß]{3,}(?:straße|strasse|allee|gasse)\b"                  # Seehofstraße
+    r")"
+)
+
+
+def _verboten(text: str) -> bool:
+    return bool(_VERBOTEN.search(text or ""))
+
+
+def _bereinigen(text: str) -> str:
+    """Entfernt jeden Satz mit Preis- oder Adressbezug."""
+    text = (text or "").strip()
+    if not text:
+        return text
+    saetze = re.split(r"(?<=[.!?])\s+", text)
+    ok = [s for s in saetze if not _verboten(s)]
+    weg = len(saetze) - len(ok)
+    if weg:
+        print(f"[i] {weg} Satz/Saetze wegen Preis- oder Adressbezug entfernt.")
+    return " ".join(ok).strip()
 
 
 # Bilder, die nie in den Slider gehoeren
