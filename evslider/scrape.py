@@ -122,6 +122,8 @@ class Expose:
     year_built: str = ""
     energy_class: str = ""
     energy_value: str = ""
+    energy_cert_type: str = ""           # Bedarfsausweis | Verbrauchsausweis
+    energy_carrier: str = ""             # Erdgas, Wärmepumpe ...
     property_type: str = ""
     floor: str = ""
     parking: str = ""
@@ -189,6 +191,15 @@ class Expose:
                     out.append((k, v))
                     vergeben.add(k)
         return out
+
+    def energieausweis_zeile(self) -> str:
+        """Pflichtzeile fuer die Caption, z.B.
+        'Bedarfsausweis | D | 103,4 kWh/(m²*a) | Baujahr: 1895 | Erdgas'.
+        Fehlende Werte werden ausgelassen; ohne jeden Wert kommt ''."""
+        teile = [self.energy_cert_type, self.energy_class, self.energy_value,
+                 f"Baujahr: {self.year_built}" if self.year_built else "",
+                 self.energy_carrier]
+        return " | ".join(t for t in teile if t)
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
@@ -341,8 +352,12 @@ def parse(html: str, url: str) -> Expose:
     ex.year_built = m.group(1) if m else ""
     m = re.search(r"Energieeffizienzklasse\s*([A-H][+]?)\b", text)
     ex.energy_class = m.group(1) if m else ""
-    m = re.search(r"Endenergieverbrauch\s*([\d.,]+\s*kWh/m²a)", text)
-    ex.energy_value = m.group(1) if m else ""
+    m = re.search(r"Endenergie(?:verbrauch|bedarf)\s*([\d.,]+)\s*kWh/?\(?m²\*?a\)?", text)
+    ex.energy_value = f"{m.group(1).replace('.', ',')} kWh/(m²*a)" if m else ""
+    m = re.search(r"Art des Energieausweises\s*(Energie)?(Bedarfs|Verbrauchs)ausweis", text, re.I)
+    ex.energy_cert_type = f"{m.group(2).capitalize()}ausweis" if m else ""
+    m = re.search(r"Energieträger\s*([^\n]+)", text)
+    ex.energy_carrier = m.group(1).strip() if m else ""
     m = re.search(r"Ihr:e Expert:in:\s*([^\n]+)", text)
     ex.agent = m.group(1).strip() if m else ""
     m = re.search(r"(Engel & Völkers [A-ZÄÖÜ][\wäöüß\- ]+)", text)
@@ -417,7 +432,8 @@ def scrape(url: str, browser: str = "auto") -> Expose:
     full = parse(res["html"], url)
     # Felder aus dem Browser-DOM bevorzugen, aber Lücken mit der HTTP-Variante füllen
     for f_name in ("title", "location", "price", "rooms", "bathrooms", "living_area",
-                   "plot_area", "year_built", "energy_class", "energy_value", "ev_id",
+                   "plot_area", "year_built", "energy_class", "energy_value",
+                   "energy_cert_type", "energy_carrier", "ev_id",
                    "property_type", "floor", "parking", "description", "shop", "agent"):
         if not getattr(full, f_name):
             setattr(full, f_name, getattr(ex, f_name))

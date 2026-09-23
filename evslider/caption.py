@@ -254,8 +254,12 @@ def _fallback_keyword(ex) -> str:
     return re.sub(r"[^A-Z0-9]", "", base)[:14] or "EXPOSE"
 
 
-def full_text(result: dict, cfg) -> str:
-    """Aufbau: Hook / CTA / Fliesstext / CTA / Hashtags.
+def full_text(result: dict, cfg, ex=None) -> str:
+    """Aufbau: Hook / CTA / Fliesstext / CTA / E&V-ID + Energieausweis / Hashtags.
+
+    Der Block mit E&V-ID und Energieausweis ist Pflicht (Impressums- und
+    EnEV-Angaben) und steht immer direkt vor den Hashtags. Er wird hier aus
+    ex gesetzt und nicht von der KI - die darf die ID sonst nirgends nennen.
 
     Der Call-to-Action steht bewusst an zweiter und an letzter Stelle - oben faengt
     er die Leser ab, die nur die ersten zwei Zeilen sehen, unten die, die den Post
@@ -266,6 +270,17 @@ def full_text(result: dict, cfg) -> str:
                   "Kommentieren Sie \"{keyword}\" und Sie erhalten das komplette "
                   "Exposé per DM.").format(keyword=kw)
     tags = " ".join(t if t.startswith("#") else f"#{t}" for t in result.get("hashtags", []))
+    pflicht = ""
+    if ex is not None:
+        zeilen = []
+        if getattr(ex, "ev_id", ""):
+            zeilen.append(f"E&V ID: {ex.ev_id}")
+        ea = ex.energieausweis_zeile() if hasattr(ex, "energieausweis_zeile") else ""
+        if ea:
+            zeilen.append(ea)
+        else:
+            print("[!] Kein Energieausweis auf der Seite gefunden - Caption ohne EnEV-Zeile.")
+        pflicht = "\n".join(zeilen)
     blocks = [result.get("hook", "").strip(), cta,
-              result.get("body", "").strip(), cta, tags]
+              result.get("body", "").strip(), cta, pflicht, tags]
     return "\n\n".join(b for b in blocks if b).strip()

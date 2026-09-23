@@ -237,7 +237,7 @@ def process(chat_id: int, jobs: list[tuple[str, str]], cfg) -> None:
                 continue
 
             texts = caption_mod.generate(ex, cfg, keyword=keyword or None)
-            text = caption_mod.full_text(texts, cfg)
+            text = caption_mod.full_text(texts, cfg, ex)
             # Ordner je Shop, damit sich zwei Standorte nicht überschreiben.
             # Wichtig: Der Shop gehört in den ORDNERPFAD, nicht in den Dateinamen.
             shop_slug = slugify(cfg.get("brand.handle", "shop").lstrip("@"))

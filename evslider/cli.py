@@ -47,7 +47,7 @@ def cmd_run(args, cfg):
             continue
 
         text_parts = caption_mod.generate(ex, cfg)
-        text = caption_mod.full_text(text_parts, cfg)
+        text = caption_mod.full_text(text_parts, cfg, ex)
 
         slides = renderer.build(ex)
         slug = f"{slugify(ex.location or ex.title)}-{ex.ev_id or i}"
