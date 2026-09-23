@@ -350,7 +350,7 @@ def parse(html: str, url: str) -> Expose:
     ex.plot_area = f"ca. {m.group(1)} m²" if m else ""
     m = re.search(r"Baujahr\s*(\d{4})", text)
     ex.year_built = m.group(1) if m else ""
-    m = re.search(r"Energieeffizienzklasse\s*([A-H][+]?)\b", text)
+    m = re.search(r"Energieeffizienzklasse\s*([A-H]\+?)(?![A-Za-z])", text)
     ex.energy_class = m.group(1) if m else ""
     m = re.search(r"Endenergie(?:verbrauch|bedarf)\s*([\d.,]+)\s*kWh/?\(?m²\*?a\)?", text)
     ex.energy_value = f"{m.group(1).replace('.', ',')} kWh/(m²*a)" if m else ""

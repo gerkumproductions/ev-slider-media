@@ -281,6 +281,10 @@ def full_text(result: dict, cfg, ex=None) -> str:
         else:
             print("[!] Kein Energieausweis auf der Seite gefunden - Caption ohne EnEV-Zeile.")
         pflicht = "\n".join(zeilen)
-    blocks = [result.get("hook", "").strip(), cta,
-              result.get("body", "").strip(), cta, pflicht, tags]
+    body = result.get("body", "").strip()
+    if not body:
+        print("[!] Body leer (Preis-/Adressfilter oder KI ohne Text) - CTA nur einmal.")
+    # Ohne Body gaebe es zwei CTAs direkt hintereinander - dann nur einen.
+    blocks = [result.get("hook", "").strip(), cta, body, cta if body else "",
+              pflicht, tags]
     return "\n\n".join(b for b in blocks if b).strip()
