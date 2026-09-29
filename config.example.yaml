@@ -26,6 +26,16 @@ shops:
       handle: "@engelvoelkers.ruhrgebiet"
     metricool:
       blog_id: "5771722"           # blogId des Ruhrgebiet-Accounts
+  suedwestfalen:
+    aliases: ["swf", "sw"]
+    brand:
+      shop_name: "Engel & Völkers Südwestfalen"
+      handle: "@engelvoelkers_suedwestfalen"   # mit Unterstrich, so steht es in Metricool
+    metricool:
+      blog_id: "7136753"           # Marke "E&V SÜDWESTFALEN" in Metricool
+      # Südwestfalen hat in Metricool kein LinkedIn verbunden, deshalb nur
+      # Instagram und Facebook. LinkedIn hier ergänzen, sobald es verbunden ist.
+      networks: ["instagram", "facebook"]
 
   # --- Heuser Immobilien: eigenes Layout, Slider aus Briefings statt Exposes ---
   heuser:
