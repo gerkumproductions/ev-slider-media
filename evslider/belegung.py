@@ -20,7 +20,7 @@ WOCHENTAGE = {"monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3,
 
 # Steht im Protokoll. Passt die Nummer nicht zu der, die publish.py erwartet,
 # liegt eine alte Fassung im Repo.
-VERSION = "2026-08-22c"
+VERSION = "2026-10-10a"
 
 _ISO_RE = re.compile(r"\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}")
 
@@ -116,10 +116,21 @@ def geplante_termine(cfg, von: dt.datetime, bis: dt.datetime) -> list[dt.datetim
 
 
 def _kollision(kandidat: dt.datetime, belegt: list[dt.datetime],
-               toleranz: dt.timedelta, tag_komplett: bool):
-    """Der Post, der dem Kandidaten im Weg steht - oder None."""
+               toleranz: dt.timedelta, tag_komplett: bool,
+               fenster_bis: dt.time | None = None):
+    """Der Post, der dem Kandidaten im Weg steht - oder None.
+
+    fenster_bis: Liegt der Kandidat vor dieser Uhrzeit (Slider-Fenster am
+    Vormittag), gilt der Tag als belegt, sobald dort schon ein anderer Post
+    VOR dieser Uhrzeit steht. Abends liegende Reels blockieren den Tag nicht.
+    """
     if tag_komplett:
         return next((b for b in belegt if b.date() == kandidat.date()), None)
+    if fenster_bis is not None and kandidat.timetz().replace(tzinfo=None) < fenster_bis:
+        treffer = next((b for b in belegt if b.date() == kandidat.date()
+                        and b.timetz().replace(tzinfo=None) < fenster_bis), None)
+        if treffer is not None:
+            return treffer
     return next((b for b in belegt if abs(b - kandidat) <= toleranz), None)
 
 
@@ -133,6 +144,10 @@ def freie_kandidaten(cfg, kandidaten: list[dt.datetime]) -> list[dt.datetime]:
     Einstellungen in config.yaml unter `schedule`:
       slot_check           an/aus, Vorgabe an
       slot_toleranz_min    wie nah ein Post sein darf, Vorgabe 60 Minuten
+      ein_post_pro_vormittag_bis  Standard "14:00": steht an einem Tag vor
+                           dieser Uhrzeit schon ein Post, kommt kein zweiter
+                           Vormittags-Post dazu. Abend-Reels zaehlen nicht.
+                           Leer lassen = aus.
       tag_komplett         true = ein Post pro Tag, egal zu welcher Uhrzeit.
                            Vorsicht: blockiert auch Tage, an denen nur ein
                            Reel oder ein fremder Post liegt.
@@ -144,6 +159,10 @@ def freie_kandidaten(cfg, kandidaten: list[dt.datetime]) -> list[dt.datetime]:
 
     toleranz = dt.timedelta(minutes=cfg.get("schedule.slot_toleranz_min", 60))
     tag_komplett = bool(cfg.get("schedule.tag_komplett", False))
+    # Ein Slider-Post pro Vormittag: Standard bis 14:00. Leer/None = aus.
+    _fb = cfg.get("schedule.ein_post_pro_vormittag_bis", "14:00")
+    fenster_bis = (dt.time(*(int(x) for x in str(_fb).split(":")))
+                   if _fb else None)
     max_vorlauf = int(cfg.get("schedule.max_vorlauf_tage", 21))
 
     try:
@@ -156,7 +175,9 @@ def freie_kandidaten(cfg, kandidaten: list[dt.datetime]) -> list[dt.datetime]:
         return kandidaten
 
     regel = ("ein Post pro Tag" if tag_komplett
-             else f"Toleranz ±{int(toleranz.total_seconds() // 60)} Min")
+             else f"Toleranz ±{int(toleranz.total_seconds() // 60)} Min"
+             + (f", ein Post pro Vormittag bis {fenster_bis:%H:%M}"
+                if fenster_bis else ""))
     print(f"[i] Kalender dieses Shops: {len(belegt)} Termine gefunden ({regel}).")
     if belegt:
         probe = ", ".join(f"{b:%d.%m. %H:%M}" for b in belegt[:8])
@@ -166,7 +187,7 @@ def freie_kandidaten(cfg, kandidaten: list[dt.datetime]) -> list[dt.datetime]:
     frei: list[dt.datetime] = []
     weg = 0
     for k in kandidaten:
-        koll = _kollision(k, belegt, toleranz, tag_komplett)
+        koll = _kollision(k, belegt, toleranz, tag_komplett, fenster_bis)
         if koll is not None:
             weg += 1
             if weg <= 5:        # Protokoll nicht zumuellen
@@ -176,7 +197,7 @@ def freie_kandidaten(cfg, kandidaten: list[dt.datetime]) -> list[dt.datetime]:
         # Auch die Termine beruecksichtigen, die in DIESEM Lauf schon
         # vergeben wurden - sonst kollidieren zwei Posts desselben
         # Durchgangs. Das ist keine Belegung, also ohne Protokollzeile.
-        if _kollision(k, frei, toleranz, tag_komplett) is not None:
+        if _kollision(k, frei, toleranz, tag_komplett, fenster_bis) is not None:
             continue
         frei.append(k)
 

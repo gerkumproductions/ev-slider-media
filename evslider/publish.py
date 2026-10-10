@@ -149,9 +149,9 @@ def normalize_media(cfg, url: str) -> str:
 def plan_slots(cfg, count: int) -> list[dt.datetime]:
     """Termine für `count` Posts auf die Wochentage verteilen.
 
-    Strategie: erst ein Post pro Tag (Mo–Sa) zur Primärzeit – das gibt den
-    größten Abstand. Reicht das nicht, kommt die zweite Uhrzeit dazu, danach
-    rollt es in die Folgewoche.
+    Strategie: erst ein Post pro Tag (Mo–Sa) zur Primärzeit über den ganzen
+    Vorschauzeitraum (schedule.max_vorlauf_tage, Standard 21 Tage). Erst wenn
+    dort jeder Tag belegt ist, kommt die zweite Uhrzeit dazu.
 
     Vor der Auswahl wird bei Metricool nachgefragt, welche dieser Termine
     schon belegt sind. Ohne diesen Schritt bekam jeder Lauf denselben Termin,
@@ -164,19 +164,35 @@ def plan_slots(cfg, count: int) -> list[dt.datetime]:
     times = cfg.get("schedule.times", ["18:00"])
     lead = dt.timedelta(hours=cfg.get("schedule.min_lead_hours", 12))
 
-    # Kandidaten in Prioritätsreihenfolge: erst jeder Tag zur ersten Uhrzeit,
-    # dann zweite Uhrzeit, dann Folgewoche. Erst danach wird chronologisch sortiert.
+    # Kandidaten in Prioritätsreihenfolge:
+    #   1. jeder erlaubte Tag zur ERSTEN Uhrzeit, und zwar über den ganzen
+    #      Vorschauzeitraum (Standard 3 Wochen) - ein freier Donnerstag in der
+    #      nächsten Woche ist besser als ein zweiter Post am selben Dienstag.
+    #   2. erst wenn wirklich alle Tage im Zeitraum belegt sind, die weiteren
+    #      Uhrzeiten (zweiter Post an einem Tag).
+    #   3. danach die Wochen dahinter.
+    # Früher kam die zweite Uhrzeit schon nach EINER Woche dran - dadurch
+    # landete ein Post z.B. Dienstag 11:30 neben dem Dienstag-9:30-Post,
+    # obwohl der Donnerstag der Folgewoche noch frei war.
+    vorschau_wochen = max(1, -(-int(cfg.get("schedule.max_vorlauf_tage", 21)) // 7))
     ordered: list[dt.datetime] = []
-    for week in range(8):
+
+    def _add(week: int, time_str: str) -> None:
+        hh, mm = (int(x) for x in time_str.split(":"))
+        for wd in days:
+            days_ahead = (wd - now.weekday()) % 7 + week * 7
+            cand = (now + dt.timedelta(days=days_ahead)).replace(
+                hour=hh, minute=mm, second=0, microsecond=0)
+            if cand < now + lead or cand in ordered:
+                continue
+            ordered.append(cand)
+
+    for time_str in times:                      # Block 1 + 2
+        for week in range(vorschau_wochen):
+            _add(week, time_str)
+    for week in range(vorschau_wochen, 8):      # Block 3
         for time_str in times:
-            hh, mm = (int(x) for x in time_str.split(":"))
-            for wd in days:
-                days_ahead = (wd - now.weekday()) % 7 + week * 7
-                cand = (now + dt.timedelta(days=days_ahead)).replace(
-                    hour=hh, minute=mm, second=0, microsecond=0)
-                if cand < now + lead or cand in ordered:
-                    continue
-                ordered.append(cand)
+            _add(week, time_str)
 
     # Belegte Termine aussortieren. Die Reihenfolge bleibt dabei erhalten.
     #
