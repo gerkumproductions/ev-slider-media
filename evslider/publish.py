@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import datetime as dt
 import mimetypes
+import re
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -234,10 +235,50 @@ def next_slot(cfg, offset_index: int = 0) -> dt.datetime:
     return plan_slots(cfg, offset_index + 1)[offset_index]
 
 
+# ---------- Co-Autor (Makler aus dem Inserat) ----------
+
+_TITEL = {"dr", "prof", "professor", "llm", "ll", "m", "ma", "mba", "msc", "bsc",
+          "dipl", "ing", "fh", "betriebswirt", "immobilienkauffrau",
+          "immobilienkaufmann", "ihk"}
+
+
+def _namens_teile(name: str) -> set[str]:
+    """'Dr. Christian Kretzmann, LL.M.' -> {'christian', 'kretzmann'}"""
+    s = (name or "").lower()
+    for a, b in (("ä", "ae"), ("ö", "oe"), ("ü", "ue"), ("ß", "ss"),
+                 ("é", "e"), ("è", "e"), ("ç", "c")):
+        s = s.replace(a, b)
+    teile = re.split(r"[^a-z]+", s)
+    return {t for t in teile if t and t not in _TITEL}
+
+
+def co_autor(cfg, makler: str) -> tuple[str, str]:
+    """Instagram-Handle des Maklers aus shops.<shop>.makler suchen.
+
+    Rueckgabe: (handle ohne @, Hinweistext fuer Telegram). Ist kein Handle
+    hinterlegt, ist handle leer - dann wird niemand eingeladen.
+    Vergleich ohne Titel, Umlaute und Reihenfolge ("Shala Albert" =
+    "Albert Shala"). Ein Eintrag passt, wenn alle seine Namensteile im
+    Inserat-Namen vorkommen.
+    """
+    if not makler:
+        return "", "Kein Makler im Inserat gefunden – keine Co-Autor-Einladung."
+    liste = cfg.get("makler") or {}
+    gesucht = _namens_teile(makler)
+    for name, handle in liste.items():
+        teile = _namens_teile(name)
+        if len(teile) >= 2 and teile <= gesucht:
+            handle = str(handle or "").strip().lstrip("@")
+            if handle:
+                return handle, f"Co-Autor eingeladen: @{handle} ({makler})"
+            break
+    return "", f"Kein Instagram hinterlegt für: {makler} – keine Einladung."
+
+
 # ---------- Metricool ----------
 
 def schedule_post(cfg, text: str, image_urls: list[str], when: dt.datetime,
-                  dry_run: bool = False) -> dict:
+                  dry_run: bool = False, co_autor_handle: str = "") -> dict:
     base = cfg.get("metricool.base_url").rstrip("/")
     url = f"{base}/v2/scheduler/posts"
     params = {"userId": cfg.metricool_user_id, "blogId": cfg.metricool_blog_id}
@@ -254,6 +295,13 @@ def schedule_post(cfg, text: str, image_urls: list[str], when: dt.datetime,
         "providers": [{"network": n} for n in cfg.get("metricool.networks", ["instagram"])],
         "descendants": [],
     }
+    # Makler als Co-Autor einladen - gibt es nur bei Instagram.
+    netze = cfg.get("metricool.networks", ["instagram"])
+    if co_autor_handle and "instagram" in netze:
+        body["instagramData"] = {
+            "type": "POST",
+            "collaborators": [{"username": co_autor_handle, "deleted": False}],
+        }
     if dry_run:
         return {"dry_run": True, "url": url, "params": params, "body": body}
 
@@ -264,6 +312,21 @@ def schedule_post(cfg, text: str, image_urls: list[str], when: dt.datetime,
                       headers={"X-Mc-Auth": cfg.metricool_token,
                                "Content-Type": "application/json"},
                       timeout=60)
+    if r.status_code >= 400 and "instagramData" in body:
+        # Lehnt Metricool die Einladung ab (z. B. Handle falsch oder Account
+        # privat), den Post trotzdem einplanen - nur ohne Co-Autor.
+        print(f"[i] Co-Autor @{co_autor_handle} abgelehnt "
+              f"({r.status_code}: {r.text[:300]}) - plane ohne Einladung ein.")
+        body.pop("instagramData", None)
+        r = requests.post(url, params=params, json=body,
+                          headers={"X-Mc-Auth": cfg.metricool_token,
+                                   "Content-Type": "application/json"},
+                          timeout=60)
+        if r.status_code < 400:
+            erg = r.json() if r.text else {"status": r.status_code}
+            if isinstance(erg, dict):
+                erg["_co_autor_abgelehnt"] = True
+            return erg
     if r.status_code >= 400:
         raise RuntimeError(f"Metricool {r.status_code}: {r.text[:500]}")
     return r.json() if r.text else {"status": r.status_code}
