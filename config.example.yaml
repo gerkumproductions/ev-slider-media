@@ -40,6 +40,8 @@ shops:
     # Titel und Reihenfolge egal. Wer hier fehlt, wird nicht eingeladen.
     makler:
       "Jana Leonov": "evjanaleonov"
+      "Julia Heinemann": "evjuliaheinemann"
+      "Julius Grönner": "juliusgroennerev"
   suedwestfalen:
     aliases: ["swf", "sw"]
     brand:
