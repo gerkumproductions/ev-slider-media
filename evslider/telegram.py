@@ -246,7 +246,13 @@ def process(chat_id: int, jobs: list[tuple[str, str]], cfg) -> None:
             paths = save_all(renderer.build(ex), ziel, slug)
 
             image_urls = publish_mod.upload_images(paths, cfg)
-            publish_mod.schedule_post(cfg, text, image_urls, slots[i])
+            handle, co_info = publish_mod.co_autor(cfg, getattr(ex, "agent", ""))
+            print(f"[i] {co_info}")
+            erg = publish_mod.schedule_post(cfg, text, image_urls, slots[i],
+                                            co_autor_handle=handle)
+            if handle and isinstance(erg, dict) and erg.get("_co_autor_abgelehnt"):
+                co_info = (f"⚠️ Instagram/Metricool hat @{handle} als Co-Autor "
+                           f"abgelehnt – Post ist ohne Einladung eingeplant.")
 
             fehlt = ""
             if ex.expected_images and len(ex.photos) < ex.expected_images:
@@ -255,7 +261,8 @@ def process(chat_id: int, jobs: list[tuple[str, str]], cfg) -> None:
             send(chat_id,
                  f"✅ {ex.title[:90]}\n"
                  f"{cfg.get('brand.shop_name', '')} · {len(paths)} Slides · "
-                 f"eingeplant für {slots[i]:%a %d.%m. %H:%M} Uhr{fehlt}\n\n{text}")
+                 f"eingeplant für {slots[i]:%a %d.%m. %H:%M} Uhr{fehlt}\n"
+                 f"👤 {co_info}\n\n{text}")
             send_slides(chat_id, paths)
 
             # Hat die Galerie geklemmt, den Screenshot mitschicken - daran
