@@ -18,6 +18,7 @@ shops:
       "Albert Shala": "albertshala_ev"
       "Keana Hoss": "keanahoss_ev"
       "Luisa Bunte": "luisabunte_ev"
+      "Daniela Meusel": "daniela_meusel_ev"
   niederrhein:
     aliases: ["nr", "nrh"]
     brand:
@@ -59,6 +60,7 @@ shops:
       "Carsten Hembeck": "carsten_hembeck"
       "Leander Schiller": "leander_schiller_ev"
       "Ariane Dahlhaus": "ariane_dahlhaus_ev"
+      "Alina Burkandt": "alina_burkandt_engelvoelkers"
 
   # --- Heuser Immobilien: eigenes Layout, Slider aus Briefings statt Exposes ---
   heuser:
