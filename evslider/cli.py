@@ -64,7 +64,10 @@ def cmd_run(args, cfg):
 
         urls = publish_mod.upload_images(paths, cfg)
         when = slots[i]
-        res = publish_mod.schedule_post(cfg, text, urls, when, dry_run=args.dry_run)
+        handle, co_info = publish_mod.co_autor(cfg, getattr(ex, "agent", ""))
+        print(f"  {co_info}")
+        res = publish_mod.schedule_post(cfg, text, urls, when, dry_run=args.dry_run,
+                                        co_autor_handle=handle)
         print(f"  {'[dry-run] ' if args.dry_run else ''}geplant für {when:%d.%m.%Y %H:%M}")
         results.append({"slug": slug, "scheduled": when.isoformat(), "metricool": res})
 
