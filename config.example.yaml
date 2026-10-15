@@ -9,6 +9,15 @@ shops:
       handle: "@engelvoelkers.rheinland"
     metricool:
       blog_id: "5661514"           # blogId aus der Metricool-Adresszeile
+    # Makler als Instagram-Co-Autor. Name wie auf der E&V-Website,
+    # Titel und Reihenfolge egal. Wer hier fehlt, wird nicht eingeladen.
+    makler:
+      "Franziska Antoni": "franzi_antoni_ev"
+      "Marie Hönscheid": "mariehoenscheid_ev"
+      "Kerstin Baumann": "kerstin_baumann_ev"
+      "Albert Shala": "albertshala_ev"
+      "Keana Hoss": "keanahoss_ev"
+      "Luisa Bunte": "luisabunte_ev"
   niederrhein:
     aliases: ["nr", "nrh"]
     brand:
@@ -26,6 +35,10 @@ shops:
       handle: "@engelvoelkers.ruhrgebiet"
     metricool:
       blog_id: "5771722"           # blogId des Ruhrgebiet-Accounts
+    # Makler als Instagram-Co-Autor. Name wie auf der E&V-Website,
+    # Titel und Reihenfolge egal. Wer hier fehlt, wird nicht eingeladen.
+    makler:
+      "Jana Leonov": "evjanaleonov"
   suedwestfalen:
     aliases: ["swf", "sw"]
     brand:
@@ -36,6 +49,16 @@ shops:
       # Südwestfalen hat in Metricool kein LinkedIn verbunden, deshalb nur
       # Instagram und Facebook. LinkedIn hier ergänzen, sobald es verbunden ist.
       networks: ["instagram", "facebook"]
+    # Makler als Instagram-Co-Autor. Name wie auf der E&V-Website,
+    # Titel und Reihenfolge egal. Wer hier fehlt, wird nicht eingeladen.
+    makler:
+      "Oliver Schnürpel": "ev_oliver.schnuerpel"
+      "Christian Schulte": "immobilien_luedenscheid"
+      "Anne vom Brocke": "evannevombrocke"
+      "Claudia Schnürpel": "claudia_schnuerpel_ev"
+      "Carsten Hembeck": "carsten_hembeck"
+      "Leander Schiller": "leander_schiller_ev"
+      "Ariane Dahlhaus": "ariane_dahlhaus_ev"
 
   # --- Heuser Immobilien: eigenes Layout, Slider aus Briefings statt Exposes ---
   heuser:
